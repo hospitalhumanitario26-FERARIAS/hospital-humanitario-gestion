@@ -1,0 +1,41 @@
+# =====================================================================
+# HOSPITAL HUMANITARIO · Sistema de Gestión Hospitalaria
+# Configuración de despliegue en Netlify
+# =====================================================================
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+  command = ""
+
+[functions]
+  node_bundler = "esbuild"
+
+# ---------------------------------------------------------------------
+# Cabeceras de seguridad
+# La política de contenido permite: los CDN de SheetJS y Supabase,
+# la conexión al proyecto Supabase y la API de Anthropic.
+# ---------------------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy = """
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob:;
+      font-src 'self' data:;
+      connect-src 'self' https://hqmqeoggdplvawhaxspw.supabase.co wss://hqmqeoggdplvawhaxspw.supabase.co https://api.anthropic.com;
+      frame-ancestors 'self';
+      base-uri 'self';
+      form-action 'self'
+    """
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
