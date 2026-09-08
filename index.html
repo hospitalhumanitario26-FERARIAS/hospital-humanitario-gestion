@@ -217,10 +217,10 @@ table.t .grp th:first-child{background:#eef2f7}
 
 
 /* ---------- MÓDULO Y BARRA DE MESES ---------- */
-.modsw{display:flex;gap:6px;padding:12px 12px 4px}
+.modsw{display:flex;gap:5px;padding:12px 10px 4px}
 .modsw button{
-  flex:1;padding:8px 6px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#b9cde0;
-  border-radius:7px;font-size:12px;cursor:pointer;font-weight:600
+  flex:1;padding:8px 4px;font-size:11.5px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#b9cde0;
+  border-radius:7px;cursor:pointer;font-weight:600;line-height:1.15
 }
 .modsw button:hover{background:rgba(255,255,255,.07);color:#fff}
 .modsw button.on{background:var(--orange);border-color:var(--orange);color:#fff}
@@ -314,6 +314,7 @@ table.t .grp th:first-child{background:#eef2f7}
     <div class="modsw">
       <button data-mod="prod" class="on">Producción</button>
       <button data-mod="fin">Financiero</button>
+      <button data-mod="inv">Inversiones</button>
     </div>
 
     <div id="navHost"></div>
@@ -401,7 +402,9 @@ async function cargarDesdeNube(){
   if(p&&p.datos){ Object.assign(S,p.datos); S.publicadoPor=p.subido_nombre; S.publicadoEn=p.creado_en; guardar(); }
   const f=await nubeUltima("matriz_financiera");
   if(f&&f.datos){ Object.assign(F,f.datos); F.publicadoPor=f.subido_nombre; F.publicadoEn=f.creado_en; finGuardar(); }
-  return {p:!!p,f:!!f};
+  const v=await nubeUltima("matriz_inversiones");
+  if(v&&v.datos){ Object.assign(I,v.datos); invRehidratar(); I.publicadoPor=v.subido_nombre; I.publicadoEn=v.creado_en; invGuardar(); }
+  return {p:!!p,f:!!f,i:!!v};
 }
 
 /* ---------- asistente de análisis a través de la función serverless ---------- */
@@ -1725,6 +1728,476 @@ function finHayDatos(){ return !!F.cargadoEn && F.m.some(m=>m.dato); }
 
 <script>
 /* =======================================================================
+   MÓDULO DE INVERSIONES — pólizas bancarias y fondos fiduciarios
+   ======================================================================= */
+const I = { anio:2026, corte:null, cargadoEn:null, bloques:[], chat:[], versiones:[] };
+const INV_CO = ["#2e6da4","#e8862b","#6c5ca8","#25a0a0","#cf5049","#8dc63f","#1f4468","#d99012"];
+
+function invVacio(){ I.bloques=[]; I.corte=null; I.cargadoEn=null; I.versiones=[]; }
+
+function fechaDe(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  if(typeof v==="number"&&v>20000&&v<80000) return new Date(Math.round((v-25569)*86400000));
+  const d=new Date(v); return isNaN(d)?null:d;
+}
+/* presenta los rótulos del Excel en mayúsculas como texto legible */
+const ACENTOS={POLIZAS:"Pólizas",POLIZA:"Póliza",ACUMULACION:"Acumulación",OPORTUNIDAD:"Oportunidad",
+  REPO:"Repo",FIDUCIA:"Fiducia",FONDO:"Fondo",BANCO:"Banco",PRODUBANCO:"Produbanco",PICHINCHA:"Pichincha",
+  GUAYAQUIL:"Guayaquil",BOLIVARIANO:"Bolivariano",AUSTRO:"Austro",INTERNACIONAL:"Internacional",
+  JEP:"JEP",BIESS:"BIESS",CACPECO:"CACPECO",COOPERATIVA:"Cooperativa",INVERSION:"Inversión",
+  ADMINISTRACION:"Administración",LIQUIDEZ:"Liquidez",RENTA:"Renta",FIJA:"Fija"};
+function bonito(s){
+  return String(s||"").replace(/\s+/g," ").trim().split(" ").map(w=>{
+    const k=norm(w);
+    if(ACENTOS[k]) return ACENTOS[k];
+    if(k.length<=3&&k===w) return w;
+    return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();
+  }).join(" ");
+}
+const fmtF = d => d?d.toLocaleDateString("es-EC",{day:"2-digit",month:"short",year:"numeric"}):"—";
+const hoy  = ()=> new Date(new Date().toDateString());
+const dias = (a,b)=> (a&&b)?Math.round((a-b)/86400000):null;
+
+function parseInversiones(wb){
+  invVacio();
+  const sh = hoja(wb,"BANCOS","INVERSIONES","POLIZAS");
+  if(!sh) throw new Error("El archivo no contiene la hoja «BANCOS».");
+  const R = filas(sh);
+  const esFechaHdr = v => norm(v).startsWith("FECHA");
+
+  for(let i=0;i<R.length;i++){
+    const t=R[i]&&R[i][0];
+    if(!t||typeof t!=="string") continue;
+    if(esFechaHdr(t)) continue;
+    const h=R[i+1]; if(!h||!esFechaHdr(h[0])) continue;
+
+    const titulo=bonito(t);
+    const poliza=norm(h[2]).includes("VENCIMIENTO");
+    const bruto=norm(t).replace("POLIZAS BANCO ","").replace("POLIZAS ","").replace("FIDUCIA ","").trim();
+    const entidad=bonito(bruto);
+    const items=[];
+    for(let k=i+2;k<R.length;k++){
+      const r=R[k]||[], f=fechaDe(r[0]);
+      if(!f){ if(r[0]&&typeof r[0]==="string") break; if(!r[1]) break; continue; }
+      const valor=num(r[1]); if(!valor) continue;
+      if(poliza) items.push({fecha:f,valor,vence:fechaDe(r[2]),interes:num(r[3]),tasa:num(r[4]),total:valor+num(r[3])});
+      else       items.push({fecha:f,valor,vence:null,interes:num(r[2]),tasa:num(r[4]),total:num(r[3])||valor+num(r[2])});
+      i=k;
+    }
+    if(items.length) I.bloques.push({titulo,entidad,tipo:poliza?"poliza":"fiducia",items});
+  }
+  if(!I.bloques.length) throw new Error("No se reconocieron bloques de inversiones en la hoja «BANCOS».");
+
+  let ult=null;
+  I.bloques.forEach(b=>b.items.forEach(x=>{ if(x.fecha&&(!ult||x.fecha>ult)) ult=x.fecha; }));
+  I.corte = ult?ult.toISOString():new Date().toISOString();
+  I.anio  = ult?ult.getFullYear():new Date().getFullYear();
+  I.cargadoEn = new Date().toISOString();
+  invGuardar();
+}
+function invGuardar(){ store.set("hh_inv",JSON.stringify({anio:I.anio,corte:I.corte,cargadoEn:I.cargadoEn,bloques:I.bloques})); }
+function invRestaurar(){
+  const r=store.get("hh_inv"); if(!r) return false;
+  try{ const d=JSON.parse(r); Object.assign(I,d); invRehidratar(); return true; }catch(e){ return false; }
+}
+function invRehidratar(){
+  (I.bloques||[]).forEach(b=>b.items.forEach(x=>{ x.fecha=fechaDe(x.fecha); x.vence=fechaDe(x.vence); }));
+}
+const invHayDatos = ()=> !!I.cargadoEn && I.bloques.length>0;
+const invCorte = ()=>{ const d=fechaDe(I.corte); return d?(MESES[d.getMonth()]+" "+d.getFullYear()):"—"; };
+
+/* ---------- agregación ---------- */
+function invTodos(){ return I.bloques.flatMap(b=>b.items.map(x=>Object.assign({},x,{entidad:b.entidad,tipo:b.tipo,titulo:b.titulo}))); }
+function invAcum(){
+  const t=invTodos();
+  const capital=t.reduce((a,x)=>a+x.valor,0);
+  const interes=t.reduce((a,x)=>a+x.interes,0);
+  const pond=capital?t.reduce((a,x)=>a+x.valor*x.tasa,0)/capital:null;
+  const plazo=t.filter(x=>x.tipo==="poliza").reduce((a,x)=>a+x.valor,0);
+  const disp =t.filter(x=>x.tipo!=="poliza").reduce((a,x)=>a+x.valor,0);
+  const rend =t.reduce((a,x)=>a+x.valor*x.tasa,0);
+  const prox =t.filter(x=>x.vence).sort((a,b)=>a.vence-b.vence)[0]||null;
+  return {n:t.length,capital,interes,total:capital+interes,tasaPond:pond,plazo,disp,rendAnual:rend,prox,
+          porEntidad:agrupa(t,"entidad"),porTipo:agrupa(t,"tipo"),porTitulo:agrupa(t,"titulo")};
+}
+function agrupa(t,campo){
+  const m={};
+  t.forEach(x=>{ const k=x[campo]; if(!m[k]) m[k]={k,capital:0,interes:0,n:0,tasaW:0};
+    m[k].capital+=x.valor; m[k].interes+=x.interes; m[k].n++; m[k].tasaW+=x.valor*x.tasa; });
+  return Object.values(m).map(o=>Object.assign(o,{tasa:div(o.tasaW,o.capital),total:o.capital+o.interes}))
+    .sort((a,b)=>b.capital-a.capital);
+}
+function invEstado(x){
+  if(!x.vence) return {t:"Disponible",c:"c-ok",d:null};
+  const d=dias(x.vence,hoy());
+  if(d==null) return {t:"—",c:"c-nu",d:null};
+  if(d<0)   return {t:"Vencida",c:"c-bd",d};
+  if(d<=30) return {t:`Vence en ${d} d`,c:"c-wr",d};
+  return {t:`${d} días`,c:"c-ok",d};
+}
+
+/* ---------- alertas y hallazgos ---------- */
+function invAlertas(){
+  const A=invAcum(), t=invTodos(), o=[];
+  const porVencer=t.filter(x=>x.vence&&dias(x.vence,hoy())>=0&&dias(x.vence,hoy())<=30);
+  if(porVencer.length) o.push({n:"Pólizas próximas a vencer",g:"warn",
+    d:`${porVencer.length} póliza(s) por ${M(porVencer.reduce((a,x)=>a+x.valor,0))} vencen dentro de 30 días: ${porVencer.map(x=>x.entidad+" ("+fmtF(x.vence)+")").join(", ")}. Definir renovación o rescate.`});
+  const vencidas=t.filter(x=>x.vence&&dias(x.vence,hoy())<0);
+  if(vencidas.length) o.push({n:"Pólizas con vencimiento cumplido",g:"bad",
+    d:`${vencidas.length} instrumento(s) por ${M(vencidas.reduce((a,x)=>a+x.valor,0))} figuran vencidos en la matriz. Confirmar renovación o acreditación.`});
+  A.porEntidad.forEach(e=>{
+    const p=div(e.capital,A.capital);
+    if(p>0.40) o.push({n:"Concentración en "+e.k,g:p>0.5?"bad":"warn",
+      d:`${PC(p)} del portafolio (${M(e.capital)}) está colocado en una sola entidad. Evaluar diversificación por riesgo de contraparte.`});
+  });
+  if(A.tasaPond!=null&&A.tasaPond<0.05) o.push({n:"Rendimiento ponderado bajo",g:"warn",
+    d:`La tasa promedio ponderada del portafolio es ${PC(A.tasaPond,2)}. Revisar la renegociación de tasas al vencimiento.`});
+  const bajo=A.porTitulo.filter(x=>x.tasa!=null&&A.tasaPond!=null&&x.tasa<A.tasaPond*0.7&&x.capital>0);
+  if(bajo.length) o.push({n:"Instrumentos por debajo del rendimiento medio",g:"warn",
+    d:`${bajo.map(x=>x.k+" ("+PC(x.tasa,2)+")").join(", ")} rinden bajo el promedio ponderado de ${PC(A.tasaPond,2)}.`});
+  return o;
+}
+function invHallazgos(){
+  const A=invAcum(), h=[];
+  h.push({t:"Portafolio al corte",s:`Al ${invCorte()} la Fundación mantiene ${M(A.capital)} colocados en ${A.n} instrumentos de ${A.porEntidad.length} entidades, con intereses devengados por ${M(A.interes)}, lo que totaliza ${M(A.total)}. La tasa promedio ponderada es de ${PC(A.tasaPond,2)} anual.`});
+  h.push({t:"Composición y liquidez",s:`${M(A.plazo)} (${PC(div(A.plazo,A.capital))}) están colocados en pólizas a plazo fijo y ${M(A.disp)} (${PC(div(A.disp,A.capital))}) en fondos fiduciarios de disponibilidad inmediata. Esta proporción define la capacidad de respuesta ante requerimientos de caja del proyecto de inversión y expansión.`});
+  const e=A.porEntidad[0];
+  if(e) h.push({t:"Concentración por entidad",s:`La mayor exposición corresponde a ${e.k} con ${M(e.capital)} (${PC(div(e.capital,A.capital))} del portafolio) a una tasa media de ${PC(e.tasa,2)}. ${A.porEntidad.length<3?"La diversificación es limitada; conviene evaluar la incorporación de otra contraparte.":"El resto se distribuye entre "+(A.porEntidad.length-1)+" entidades adicionales."}`});
+  h.push({t:"Rendimiento esperado",s:`Manteniendo las condiciones actuales, el portafolio generaría del orden de ${M(A.rendAnual)} anuales en intereses, equivalentes a ${M(A.rendAnual/12)} mensuales.`});
+  if(A.prox) h.push({t:"Próximo vencimiento",s:`El vencimiento más cercano es el ${fmtF(A.prox.vence)} en ${A.prox.entidad} por ${M(A.prox.valor)} a una tasa del ${PC(A.prox.tasa,2)}${dias(A.prox.vence,hoy())!=null?" ("+dias(A.prox.vence,hoy())+" días)":""}. Es la ventana para renegociar tasa o reasignar los recursos.`});
+  return h;
+}
+
+/* =======================================================================
+   VISTAS
+   ======================================================================= */
+function iPanel(){
+  const A=invAcum();
+  const k=[
+    kpi("k-bl","CAPITAL INVERTIDO",M0(A.capital),`${A.n} instrumentos · ${A.porEntidad.length} entidades`),
+    kpi("k-or","INTERESES DEVENGADOS",M0(A.interes),`${PC(div(A.interes,A.capital),2)} sobre el capital`),
+    kpi("k-nv","TOTAL DEL PORTAFOLIO",M0(A.total),`Capital más intereses al corte`),
+    kpi("k-tl","TASA PROMEDIO PONDERADA",PC(A.tasaPond,2),`Rendimiento anual del portafolio`),
+    kpi("k-gr","DISPONIBILIDAD INMEDIATA",M0(A.disp),`${PC(div(A.disp,A.capital))} en fondos fiduciarios`),
+    kpi("k-pu","COLOCADO A PLAZO",M0(A.plazo),`${PC(div(A.plazo,A.capital))} en pólizas bancarias`),
+    kpi("k-rd","PRÓXIMO VENCIMIENTO",A.prox?fmtF(A.prox.vence):"—",A.prox?`${A.prox.entidad} · ${M0(A.prox.valor)}`:"Sin pólizas a plazo")
+  ].join("");
+
+  const fil=A.porTitulo.map((x,i)=>({c:[x.k,N(x.n),M(x.capital),PC(div(x.capital,A.capital)),M(x.interes),PC(x.tasa,2),M(x.total)]}));
+  fil.push({cls:"tot",c:["Total del portafolio",N(A.n),M(A.capital),"100 %",M(A.interes),PC(A.tasaPond,2),M(A.total)]});
+
+  return `<div class="kpis">${k}</div>`+
+    card("Composición del portafolio","Al "+invCorte()+" · distribución del capital colocado",
+      '<div class="grid2"><div>'+
+      chDonut(A.porTitulo.map((x,i)=>({label:x.k,value:x.capital,color:INV_CO[i%INV_CO.length]})),{centro:M0(A.capital),centroSub:"capital invertido"})+
+      leyenda(A.porTitulo.map((x,i)=>({label:x.k,color:INV_CO[i%INV_CO.length]})))+"</div><div>"+
+      chHBar(A.porEntidad.map(x=>({label:x.k,v:x.capital})),{color:"#2e6da4",ml:150,n1:"Capital colocado"})+
+      '<p class="mini">Capital por entidad financiera. La concentración en una sola contraparte es un factor de riesgo a vigilar.</p>'+
+      "</div></div>")+
+    card("Resumen por instrumento","Capital, intereses y rendimiento de cada colocación",
+      tabla([{t:"Instrumento",l:1},{t:"N.º"},{t:"Capital"},{t:"% del total"},{t:"Intereses"},{t:"Tasa anual"},{t:"Total"}],fil))+
+    '<div class="grid2">'+
+      card("Capital por tipo de instrumento","Plazo fijo frente a disponibilidad inmediata",
+        chDonut([{label:"Pólizas a plazo",value:A.plazo,color:"#6c5ca8"},{label:"Fondos fiduciarios",value:A.disp,color:"#25a0a0"}],{centro:PC(div(A.disp,A.capital),0),centroSub:"liquidez inmediata"})+
+        leyenda([{label:"Pólizas a plazo",color:"#6c5ca8"},{label:"Fondos fiduciarios",color:"#25a0a0"}]))+
+      card("Tasa anual por instrumento","Comparación con el promedio ponderado del portafolio",
+        chHBar(A.porTitulo.map(x=>({label:x.k,v:Math.round((x.tasa||0)*10000)/100})),{color:"#e8862b",ml:150,n1:"Tasa anual %"})+
+        `<p class="mini">Valores en porcentaje anual. Promedio ponderado del portafolio: ${PC(A.tasaPond,2)}.</p>`)+
+    "</div>";
+}
+
+function iDetalle(){
+  const t=invTodos().sort((a,b)=>b.valor-a.valor);
+  const fil=t.map(x=>{
+    const e=invEstado(x), pl=x.vence?dias(x.vence,x.fecha):null;
+    return {c:[x.titulo,x.entidad,x.tipo==="poliza"?"Póliza":"Fiducia",fmtF(x.fecha),fmtF(x.vence),
+      pl?N(pl)+" d":'<span class="dim">—</span>',M(x.valor),PC(x.tasa,2),M(x.interes),M(x.total),
+      `<span class="chip ${e.c}">${e.t}</span>`]};
+  });
+  const A=invAcum();
+  fil.push({cls:"tot",c:["Total","","","","","",M(A.capital),PC(A.tasaPond,2),M(A.interes),M(A.total),""]});
+  return card("Detalle de instrumentos","Al "+invCorte()+" · "+A.n+" colocaciones vigentes",
+    tabla([{t:"Instrumento",l:1},{t:"Entidad",l:1},{t:"Tipo",l:1},{t:"Fecha"},{t:"Vencimiento"},{t:"Plazo"},{t:"Capital"},{t:"Tasa"},{t:"Intereses"},{t:"Total"},{t:"Estado"}],fil))+
+    card("Capital por colocación","Ordenado de mayor a menor",
+      chHBar(t.map(x=>({label:x.entidad+(x.vence?" · "+fmtF(x.vence):""),v:x.valor})),{color:"#1f4468",ml:190,n1:"Capital"}));
+}
+
+function iVencimientos(){
+  const t=invTodos().filter(x=>x.vence).sort((a,b)=>a.vence-b.vence);
+  if(!t.length) return card("Calendario de vencimientos","",'<div class="empty"><p>La matriz no registra pólizas con fecha de vencimiento.</p></div>');
+  const fil=t.map(x=>{
+    const e=invEstado(x);
+    return {c:[fmtF(x.vence),x.entidad,M(x.valor),PC(x.tasa,2),M(x.interes),M(x.total),`<span class="chip ${e.c}">${e.t}</span>`]};
+  });
+  fil.push({cls:"tot",c:["Total",'',M(t.reduce((a,x)=>a+x.valor,0)),"",M(t.reduce((a,x)=>a+x.interes,0)),M(t.reduce((a,x)=>a+x.total,0)),""]});
+  /* agrupación por mes de vencimiento */
+  const porMes={};
+  t.forEach(x=>{ const k=x.vence.getFullYear()+"-"+x.vence.getMonth(); porMes[k]=(porMes[k]||0)+x.valor; });
+  const claves=Object.keys(porMes).sort((a,b)=>{const[ay,am]=a.split("-").map(Number),[by,bm]=b.split("-").map(Number);return ay-by||am-bm;});
+  const A=invAcum();
+  const p30=t.filter(x=>dias(x.vence,hoy())>=0&&dias(x.vence,hoy())<=30).reduce((a,x)=>a+x.valor,0);
+  const p90=t.filter(x=>dias(x.vence,hoy())>=0&&dias(x.vence,hoy())<=90).reduce((a,x)=>a+x.valor,0);
+  const k=[
+    kpi("k-rd","VENCE EN 30 DÍAS",M0(p30),p30?"Requiere decisión de renovación":"Sin vencimientos inmediatos"),
+    kpi("k-or","VENCE EN 90 DÍAS",M0(p90),`${PC(div(p90,A.capital))} del portafolio`),
+    kpi("k-bl","CAPITAL A PLAZO",M0(A.plazo),`${t.length} póliza(s) vigentes`),
+    kpi("k-tl","INTERESES AL VENCIMIENTO",M0(t.reduce((a,x)=>a+x.interes,0)),"Rendimiento pactado de las pólizas")
+  ].join("");
+  return `<div class="kpis">${k}</div>`+
+    card("Calendario de vencimientos","Ordenado por fecha · los días restantes se calculan sobre la fecha de hoy",
+      tabla([{t:"Vencimiento"},{t:"Entidad",l:1},{t:"Capital"},{t:"Tasa"},{t:"Intereses"},{t:"Total a recibir"},{t:"Estado"}],fil))+
+    card("Capital que vence por mes","Distribución temporal de los recursos colocados a plazo",
+      chBars(claves.map(k=>{const[y,m]=k.split("-").map(Number);return MESC[m]+" "+String(y).slice(2);}),
+        [{name:"Capital",color:"#6c5ca8",values:claves.map(k=>porMes[k])}],{h:240})+
+      leyenda([{label:"Capital que vence",color:"#6c5ca8"}]));
+}
+
+function iKpis(){
+  const A=invAcum();
+  const sem=(ok,al)=> ok?'<span class="chip c-ok">Adecuado</span>':(al?'<span class="chip c-wr">Vigilar</span>':'<span class="chip c-bd">Atención</span>');
+  const conc=A.porEntidad.length?div(A.porEntidad[0].capital,A.capital):null;
+  const p30=invTodos().filter(x=>x.vence&&dias(x.vence,hoy())>=0&&dias(x.vence,hoy())<=30).reduce((a,x)=>a+x.valor,0);
+  const F1=[
+    ["Capital invertido","Portafolio",M(A.capital),"—",'<span class="chip c-nu">Seguimiento</span>',"Suma del capital colocado en todos los instrumentos"],
+    ["Intereses devengados","Rendimiento",M(A.interes),"—",'<span class="chip c-nu">Seguimiento</span>',"Intereses acumulados o pactados al corte"],
+    ["Tasa promedio ponderada","Rendimiento",PC(A.tasaPond,2),"≥ 5,00 %",sem(A.tasaPond>=0.05,A.tasaPond>=0.04),"Tasa media ponderada por el capital de cada instrumento"],
+    ["Rendimiento anual estimado","Rendimiento",M(A.rendAnual),"—",'<span class="chip c-nu">Seguimiento</span>',"Capital por tasa, manteniendo las condiciones actuales"],
+    ["Disponibilidad inmediata","Liquidez",PC(div(A.disp,A.capital)),"≥ 30 %",sem(div(A.disp,A.capital)>=0.30,div(A.disp,A.capital)>=0.20),"Fondos fiduciarios rescatables sin esperar vencimiento"],
+    ["Capital comprometido a plazo","Liquidez",PC(div(A.plazo,A.capital)),"≤ 70 %",sem(div(A.plazo,A.capital)<=0.70,div(A.plazo,A.capital)<=0.80),"Pólizas que solo se liberan a su vencimiento"],
+    ["Concentración en la mayor entidad","Riesgo",PC(conc),"≤ 40 %",sem(conc<=0.40,conc<=0.50),"Exposición al riesgo de una sola contraparte"],
+    ["Entidades financieras","Riesgo",N(A.porEntidad.length),"≥ 3",sem(A.porEntidad.length>=3,A.porEntidad.length>=2),"Número de contrapartes del portafolio"],
+    ["Vencimientos en 30 días","Gestión",M(p30),"—",p30?'<span class="chip c-wr">Decisión pendiente</span>':'<span class="chip c-ok">Sin urgencias</span>',"Capital que requiere decisión de renovación o rescate"]
+  ];
+  return card("Tablero de inversiones","Al "+invCorte()+" · metas de referencia definidas por la administración",
+    tabla([{t:"Indicador",l:1},{t:"Categoría",l:1},{t:"Valor"},{t:"Referencia"},{t:"Semáforo"},{t:"Definición",l:1}],
+      F1.map(f=>({c:[f[0],f[1],"<b>"+f[2]+"</b>",f[3],f[4],'<span class="mini">'+f[5]+"</span>"]}))))+
+    card("Distribución del riesgo por entidad","Capital, participación y rendimiento de cada contraparte",
+      tabla([{t:"Entidad",l:1},{t:"Instrumentos"},{t:"Capital"},{t:"% del portafolio"},{t:"Tasa media"},{t:"Intereses"}],
+        A.porEntidad.map(e=>({c:[e.k,N(e.n),M(e.capital),PC(div(e.capital,A.capital)),PC(e.tasa,2),M(e.interes)]}))
+        .concat([{cls:"tot",c:["Total",N(A.n),M(A.capital),"100 %",PC(A.tasaPond,2),M(A.interes)]}])));
+}
+
+function iInforme(){
+  const A=invAcum(), H=invHallazgos(), AL=invAlertas(), t=invTodos();
+  const venc=t.filter(x=>x.vence).sort((a,b)=>a.vence-b.vence);
+  return `
+  <div class="noprint" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="btn orange" onclick="window.print()">Descargar PDF / imprimir</button>
+    <button class="btn ghost" onclick="verImprimible()">Abrir versión imprimible</button>
+    <span class="mini" style="align-self:center">En el diálogo de impresión elija «Guardar como PDF».</span>
+  </div>
+  <div class="rep" id="repDoc">
+    <div class="cover">
+      <h1>Informe de inversiones</h1>
+      <div class="line"></div>
+      <div class="sub">Corte al ${invCorte()}</div>
+      <p style="color:#cddced;margin-top:22px;font-size:13px">Fundación Pablo Jaramillo Crespo · Hospital Humanitario<br>Portafolio de pólizas y fondos fiduciarios</p>
+    </div>
+
+    <section>
+      <h2>Resumen del portafolio</h2>
+      <div class="sub">Situación al ${invCorte()}</div>
+      <div class="stat">
+        <div><b>${M0(A.capital)}</b><span>Capital invertido · ${A.n} instrumentos</span></div>
+        <div><b>${M0(A.interes)}</b><span>Intereses devengados</span></div>
+        <div><b>${M0(A.total)}</b><span>Total del portafolio</span></div>
+        <div><b>${PC(A.tasaPond,2)}</b><span>Tasa promedio ponderada</span></div>
+        <div><b>${M0(A.rendAnual)}</b><span>Rendimiento anual estimado</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Composición</h2>
+      <div class="sub">Distribución del capital por instrumento y entidad</div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:center">
+        <div>${chDonut(A.porTitulo.map((x,i)=>({label:x.k,value:x.capital,color:INV_CO[i%INV_CO.length]})),{centro:M0(A.capital),centroSub:"capital"})}
+          ${leyenda(A.porTitulo.map((x,i)=>({label:x.k,color:INV_CO[i%INV_CO.length]})))}</div>
+        <div>${chHBar(A.porEntidad.map(x=>({label:x.k,v:x.capital})),{color:"#2e6da4",ml:150,n1:"Capital"})}</div>
+      </div>
+      ${tabla([{t:"Instrumento",l:1},{t:"Capital"},{t:"% del total"},{t:"Tasa anual"},{t:"Intereses"},{t:"Total"}],
+        A.porTitulo.map(x=>({c:[x.k,M(x.capital),PC(div(x.capital,A.capital)),PC(x.tasa,2),M(x.interes),M(x.total)]}))
+        .concat([{cls:"tot",c:["Total",M(A.capital),"100 %",PC(A.tasaPond,2),M(A.interes),M(A.total)]}]))}
+    </section>
+
+    <section>
+      <h2>Liquidez</h2>
+      <div class="sub">Plazo fijo frente a disponibilidad inmediata</div>
+      <div class="stat">
+        <div><b>${M0(A.plazo)}</b><span>Pólizas a plazo · ${PC(div(A.plazo,A.capital))}</span></div>
+        <div><b>${M0(A.disp)}</b><span>Fondos fiduciarios · ${PC(div(A.disp,A.capital))}</span></div>
+      </div>
+      <p>Los fondos fiduciarios son rescatables sin esperar vencimiento y constituyen la reserva de respuesta inmediata ante los requerimientos del proyecto de inversión y expansión. Las pólizas a plazo ofrecen mayor rendimiento a cambio de inmovilizar los recursos hasta su fecha de vencimiento.</p>
+    </section>
+
+    ${venc.length?`<section>
+      <h2>Calendario de vencimientos</h2>
+      <div class="sub">Pólizas vigentes ordenadas por fecha</div>
+      ${tabla([{t:"Vencimiento"},{t:"Entidad",l:1},{t:"Capital"},{t:"Tasa"},{t:"Intereses"},{t:"Total a recibir"}],
+        venc.map(x=>({c:[fmtF(x.vence),x.entidad,M(x.valor),PC(x.tasa,2),M(x.interes),M(x.total)]})))}
+    </section>`:""}
+
+    <section>
+      <h2>Análisis de la dirección</h2>
+      <div class="sub">Lectura del portafolio al corte</div>
+      ${H.map(x=>`<h3>${x.t}</h3><p>${x.s}</p>`).join("")}
+    </section>
+
+    <section>
+      <h2>Alertas y recomendaciones</h2>
+      <div class="sub">Aspectos que requieren decisión directiva</div>
+      ${AL.length?AL.map(a=>`<div class="note ${a.g}" style="margin-bottom:10px"><b>${esc(a.n)}</b><br>${esc(a.d)}</div>`).join(""):
+        '<div class="note"><b>Sin alertas en el portafolio al corte.</b></div>'}
+      <h3>Próximos pasos sugeridos</h3>
+      <ul>
+        <li>Anticipar la decisión de renovación de cada póliza con al menos quince días de antelación al vencimiento.</li>
+        <li>Cotizar tasas con más de una entidad antes de renovar, para sostener el rendimiento del portafolio.</li>
+        <li>Mantener una reserva de disponibilidad inmediata acorde al cronograma del proyecto de inversión y expansión.</li>
+        <li>Vigilar la concentración por contraparte y diversificar cuando una entidad supere el 40 % del portafolio.</li>
+      </ul>
+      <p class="mini" style="margin-top:18px">Documento generado el ${new Date().toLocaleDateString("es-EC",{day:"2-digit",month:"long",year:"numeric"})} a partir de la matriz de inversiones cargada en el sistema.</p>
+    </section>
+  </div>`;
+}
+
+function iCarga(){
+  return card("Carga de la matriz de inversiones","Suba el archivo mensual de inversiones; es independiente de las matrices de producción y financiera",
+    `<div class="grid2">
+      <div>
+        <div class="drop" id="idrop">
+          <div class="big">↥</div>
+          <b>Arrastre aquí el archivo o haga clic para seleccionarlo</b>
+          <p class="mini" style="margin-top:6px">Formatos .xlsx y .xlsm · debe conservar la hoja BANCOS</p>
+          <input type="file" id="ifile" accept=".xlsx,.xlsm,.xls" style="display:none">
+        </div>
+        <div id="icargaMsg" style="margin-top:14px"></div>
+        ${I.cargadoEn?`<div class="note" style="margin-top:14px"><b>Matriz vigente:</b> corte al ${invCorte()}. Última carga el ${new Date(I.cargadoEn).toLocaleString("es-EC")}.${I.publicadoPor?`<br>Publicada por ${esc(I.publicadoPor)}${I.publicadoEn?" el "+new Date(I.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
+        <div style="margin-top:14px">
+          <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_inv');invVacio();ir('icarga');}">Limpiar la copia local</button>
+        </div>
+      </div>
+      <div>
+        <h4 style="font-size:13px;color:var(--navy);margin-bottom:8px">Cómo funciona</h4>
+        <ol class="steps">
+          <li>Actualice su matriz de inversiones del mes como lo hace habitualmente.</li>
+          <li>Súbala aquí; no toca la información de producción ni la financiera.</li>
+          <li>El sistema lee la hoja <b>BANCOS</b> y reconoce cada bloque de pólizas y fondos fiduciarios por su encabezado.</li>
+          <li>Calcula capital, intereses, tasa ponderada, liquidez, concentración por entidad y los días que faltan para cada vencimiento.</li>
+          <li>El corte se toma de la fecha más reciente del archivo.</li>
+        </ol>
+        <div class="note warn" style="margin-top:14px">${enNube()
+          ? "Cada carga se publica en la base institucional y queda registrada con fecha y responsable; las versiones anteriores no se modifican."
+          : "Modo local: los datos quedan guardados solo en este navegador."}</div>
+      </div>
+    </div>`);
+}
+function initICarga(){
+  const d=$("#idrop"), f=$("#ifile"); if(!d) return;
+  d.onclick=()=>f.click();
+  d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
+  d.ondragleave=()=>d.classList.remove("hot");
+  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerInversiones(e.dataTransfer.files[0]);};
+  f.onchange=e=>{ if(e.target.files[0]) leerInversiones(e.target.files[0]); };
+}
+function leerInversiones(file){
+  const msg=$("#icargaMsg");
+  if(typeof XLSX==="undefined"){ msg.innerHTML='<div class="note bad"><b>No se pudo cargar el lector de Excel.</b></div>'; return; }
+  msg.innerHTML='<div class="note">Leyendo <b>'+esc(file.name)+'</b>…</div>';
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true});
+      parseInversiones(wb);
+      const A=invAcum();
+      const det=`Corte al ${invCorte()} · ${A.n} instrumentos · ${I.bloques.length} bloques · capital ${M(A.capital)}.`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}</div>`;
+      pintarSidebar(); pintarMeses(); pintarAlerta();
+      publicarInversiones(det);
+    }catch(err){ msg.innerHTML='<div class="note bad"><b>No se pudo leer el archivo.</b><br>'+esc(err.message)+"</div>"; }
+  };
+  r.readAsArrayBuffer(file);
+}
+async function publicarInversiones(det){
+  const msg=$("#icargaMsg"), ver='<button class="btn orange" style="margin-top:10px" onclick="ir(\'ipanel\')">Ver el panel de inversiones</button>';
+  if(!enNube()){ msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz cargada.</b><br>${det}</div>`+ver; return; }
+  try{
+    await nubePublicar("matriz_inversiones",I.anio,invCorte(),{anio:I.anio,corte:I.corte,cargadoEn:I.cargadoEn,bloques:I.bloques});
+    I.publicadoPor=(S.user&&S.user.nombre)||"—"; I.publicadoEn=new Date().toISOString();
+    msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz cargada y publicada.</b><br>${det}<br>Disponible para todos los usuarios del sistema.</div>`+ver;
+  }catch(e){
+    msg.innerHTML=`<div class="note warn"><b>Matriz cargada en este dispositivo, pero no se pudo publicar.</b><br>${esc(e.message)}</div>`+ver;
+  }
+}
+
+function iDatos(){
+  const fil=[];
+  I.bloques.forEach(b=>b.items.forEach(x=>{
+    fil.push({c:[b.titulo,b.tipo==="poliza"?"Póliza":"Fiducia",fmtF(x.fecha),fmtF(x.vence),M(x.valor),M(x.interes),PC(x.tasa,2),M(x.total)]});
+  }));
+  return card("Datos fuente de inversiones","Valores tal como fueron leídos de la hoja BANCOS · corte al "+invCorte(),
+    tabla([{t:"Bloque",l:1},{t:"Tipo",l:1},{t:"Fecha"},{t:"Vencimiento"},{t:"Capital"},{t:"Intereses"},{t:"Tasa"},{t:"Total"}],fil));
+}
+
+/* ---------- asistente de inversiones ---------- */
+function invContexto(){
+  const A=invAcum();
+  return {
+    hospital:"Hospital Humanitario — Fundación Pablo Jaramillo Crespo, Cuenca, Ecuador",
+    modulo:"Portafolio de inversiones", corte:invCorte(), fechaHoy:new Date().toISOString().slice(0,10),
+    resumen:{capitalInvertido:A.capital,interesesDevengados:A.interes,totalPortafolio:A.total,
+      tasaPromedioPonderada:A.tasaPond,rendimientoAnualEstimado:A.rendAnual,
+      capitalAPlazo:A.plazo,disponibilidadInmediata:A.disp,numeroInstrumentos:A.n},
+    porEntidad:A.porEntidad.map(e=>({entidad:e.k,capital:e.capital,intereses:e.interes,tasaMedia:e.tasa,participacion:div(e.capital,A.capital)})),
+    instrumentos:invTodos().map(x=>({instrumento:x.titulo,entidad:x.entidad,tipo:x.tipo,
+      fecha:x.fecha?x.fecha.toISOString().slice(0,10):null, vencimiento:x.vence?x.vence.toISOString().slice(0,10):null,
+      diasParaVencer:x.vence?dias(x.vence,hoy()):null, capital:x.valor, tasaAnual:x.tasa, intereses:x.interes, total:x.total})),
+    referencias:{concentracionMaximaPorEntidad:"40%",disponibilidadInmediataMinima:"30%",tasaObjetivo:"≥5% anual"}
+  };
+}
+function invRespuestaLocal(q){
+  const t=norm(q), H=invHallazgos(), AL=invAlertas();
+  if(t.includes("ALERTA")||t.includes("RIESGO")||t.includes("PROBLEMA"))
+    return AL.length?"Aspectos que requieren atención:\n\n"+AL.map(a=>"• **"+a.n+"** — "+a.d).join("\n\n"):"No hay alertas en el portafolio al corte.";
+  if(t.includes("VENCIMIENT")||t.includes("RENOVA")) return H[4]?("**"+H[4].t+"**\n"+H[4].s):"No hay pólizas con vencimiento registrado.";
+  if(t.includes("LIQUIDEZ")||t.includes("DISPONIB")) return "**"+H[1].t+"**\n"+H[1].s;
+  if(t.includes("CONCENTRA")||t.includes("ENTIDAD")||t.includes("BANCO")) return H[2]?("**"+H[2].t+"**\n"+H[2].s):"";
+  if(t.includes("RENDIMIENT")||t.includes("TASA")||t.includes("INTERES")) return "**"+H[3].t+"**\n"+H[3].s;
+  return H.map(x=>"**"+x.t+"**\n"+x.s).join("\n\n")+(AL.length?"\n\n**Alertas**\n"+AL.map(a=>"• "+a.n).join("\n"):"");
+}
+function iIA(){
+  const sug=["Resume la situación del portafolio","¿Qué vencimientos debo atender pronto?","¿Está bien diversificado el riesgo por entidad?","¿Cómo está el rendimiento frente al mercado?","¿Tenemos liquidez suficiente para el proyecto de expansión?"];
+  return card("Asistente de inversiones","Consultas sobre el portafolio al "+invCorte(),
+    `<div class="chat">
+      <div class="msgs" id="imsgs"></div>
+      <div class="sugg">${sug.map(s=>`<button onclick="ipreg(this.textContent)">${esc(s)}</button>`).join("")}</div>
+      <div class="chatin">
+        <input id="iqin" placeholder="Escriba su pregunta sobre las inversiones…" onkeydown="if(event.key==='Enter')ipreg(this.value)">
+        <button class="btn" onclick="ipreg($('#iqin').value)">Enviar</button>
+      </div>
+    </div>`,'<button class="btn ghost sm" onclick="I.chat=[];pintarIChat()">Limpiar</button>');
+}
+function pintarIChat(){
+  const m=$("#imsgs"); if(!m) return;
+  if(!I.chat||!I.chat.length) m.innerHTML='<div class="msg a">Puedo analizar el portafolio: composición, rendimiento, liquidez, concentración por entidad y calendario de vencimientos. ¿Qué desea revisar?</div>';
+  else m.innerHTML=I.chat.map(c=>`<div class="msg ${c.r==="u"?"u":"a"}">${esc(c.t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}</div>`).join("");
+  m.scrollTop=m.scrollHeight;
+}
+async function ipreg(q){
+  q=(q||"").trim(); if(!q) return;
+  const inp=$("#iqin"); if(inp) inp.value="";
+  I.chat=I.chat||[]; I.chat.push({r:"u",t:q}); I.chat.push({r:"a",t:"Analizando…"}); pintarIChat();
+  const sistema="Eres asesor financiero de la Fundación Pablo Jaramillo Crespo (Hospital Humanitario, Cuenca, Ecuador), una institución sin fines de lucro. "+
+    "Analizas su portafolio de inversiones en pólizas bancarias y fondos fiduciarios. Responde en español con cifras exactas en dólares, "+
+    "atendiendo al rendimiento, la liquidez, el riesgo de contraparte y el calendario de vencimientos. Sé concreto y orientado a la decisión directiva; máximo seis párrafos cortos o viñetas.";
+  let out;
+  try{ out=await preguntarIA(sistema,invContexto(),q); }
+  catch(e){ out=invRespuestaLocal(q); }
+  I.chat[I.chat.length-1]={r:"a",t:out}; pintarIChat();
+}
+</script>
+
+<script>
+/* =======================================================================
    VISTAS DEL MÓDULO FINANCIERO
    ======================================================================= */
 const M  = n => (n==null||!isFinite(n))?"—":"$ "+n.toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2187,6 +2660,12 @@ async function fpreg(q){
    NAVEGACIÓN — dos módulos independientes
    ======================================================================= */
 const NAV = {
+  inv:[
+    {g:"PORTAFOLIO",it:[["ipanel","◉","Panel de inversiones"],["idet","▦","Detalle de instrumentos"],
+      ["ivenc","▤","Vencimientos"],["ikpis","✓","Tablero de inversiones"]]},
+    {g:"GESTIÓN",it:[["iinforme","▣","Informe de inversiones"],["iia","✦","Asistente de inversiones"]]},
+    {g:"ADMINISTRACIÓN",it:[["icarga","↥","Carga de la matriz"],["idatos","☰","Datos fuente"],["config","⚙","Configuración"]]}
+  ],
   prod:[
     {g:"SEGUIMIENTO",it:[["panel","◉","Panel general"],["hosp","▤","Hospitalización"],["depto","▦","Hosp. por departamento"],
       ["ce","✚","Consulta externa"],["emerg","▲","Emergencia"],["cir","✂","Quirófano"],
@@ -2204,15 +2683,20 @@ const NAV = {
 const VISTAS={panel:vPanel,hosp:vHosp,depto:vDepto,ce:vCE,emerg:vEmerg,cir:vCir,aux:vAux,cat:vCat,kpis:vKpis,
   informe:vInforme,ia:vIA,carga:vCarga,datos:vDatos,config:vConfig,
   fpanel:fPanel,farea:fArea,fest:fEstructura,fcartera:fCartera,fkpis:fKpis,
-  finforme:fInforme,fia:fIA,fcarga:fCarga,fdatos:fDatos};
+  finforme:fInforme,fia:fIA,fcarga:fCarga,fdatos:fDatos,
+  ipanel:iPanel,idet:iDetalle,ivenc:iVencimientos,ikpis:iKpis,
+  iinforme:iInforme,iia:iIA,icarga:iCarga,idatos:iDatos};
 const SUBT={panel:"Panel general de gestión",hosp:"Indicadores de hospitalización",depto:"Hospitalización por departamento",
   ce:"Consulta externa",emerg:"Emergencia",cir:"Producción quirúrgica y partos",aux:"Auxiliares de diagnóstico",
   cat:"Categoría de paciente",kpis:"Indicadores clave y semáforos",informe:"Informe ejecutivo para el directorio",
   ia:"Asistente de análisis",carga:"Carga mensual de la matriz",datos:"Datos fuente",config:"Configuración",
   fpanel:"Panel económico-financiero",farea:"Resultado por área de servicio",fest:"Estructura de costos",
   fcartera:"Cartera pendiente con la red pública",fkpis:"Tablero de indicadores financieros",
-  finforme:"Informe económico para el directorio",fia:"Asistente financiero",fcarga:"Carga de la matriz financiera",fdatos:"Datos fuente financieros"};
-const LIBRE=["carga","fcarga","config","datos","fdatos"];
+  finforme:"Informe económico para el directorio",fia:"Asistente financiero",fcarga:"Carga de la matriz financiera",fdatos:"Datos fuente financieros",
+  ipanel:"Panel del portafolio de inversiones",idet:"Detalle de instrumentos",ivenc:"Calendario de vencimientos",
+  ikpis:"Tablero de indicadores del portafolio",iinforme:"Informe de inversiones para el directorio",
+  iia:"Asistente de inversiones",icarga:"Carga de la matriz de inversiones",idatos:"Datos fuente de inversiones"};
+const LIBRE=["carga","fcarga","icarga","config","datos","fdatos","idatos"];
 let modo="prod", vista="panel";
 
 const puedeCargar = ()=> !enNube() || !!(S.user&&S.user.puedeCargar);
@@ -2225,32 +2709,40 @@ function pintarNav(){
 }
 function cambiarModulo(m){
   if(modo===m) return;
-  modo=m; vista = m==="prod" ? (S.cargadoEn?"panel":"carga") : (finHayDatos()?"fpanel":"fcarga");
+  modo=m;
+  if(m==="prod")      vista = S.cargadoEn?"panel":(puedeCargar()?"carga":"panel");
+  else if(m==="fin")  vista = finHayDatos()?"fpanel":(puedeCargar()?"fcarga":"fpanel");
+  else                vista = invHayDatos()?"ipanel":(puedeCargar()?"icarga":"ipanel");
   ir(vista);
 }
 function ir(v){
   if(!VISTAS[v]) return;
-  if(["carga","fcarga"].includes(v) && !puedeCargar()) v = v==="carga" ? "panel" : "fpanel";
-  if(v!=="config"){ const nuevoModo = NAV.fin.some(s=>s.it.some(i=>i[0]===v))?"fin":"prod"; modo=nuevoModo; }
+  if(["carga","fcarga","icarga"].includes(v) && !puedeCargar()) v = v==="carga"?"panel":(v==="fcarga"?"fpanel":"ipanel");
+  if(v!=="config"){
+    modo = NAV.fin.some(s=>s.it.some(i=>i[0]===v)) ? "fin"
+         : (NAV.inv.some(s=>s.it.some(i=>i[0]===v)) ? "inv" : "prod");
+  }
   vista=v;
   pintarNav(); pintarMeses(); pintarSidebar(); pintarAlerta();
   $("#tbSub").textContent=SUBT[v]||"";
   const sinProd = !S.cargadoEn && !S.meses.some(m=>m.egr||m.ce||m.em);
-  const sinFin  = !finHayDatos();
   let html;
   if(modo==="prod" && sinProd && !LIBRE.includes(v)) html=vacio("Todavía no se ha cargado la matriz de gestión.");
-  else if(modo==="fin" && sinFin && !LIBRE.includes(v)) html=finVacioVista();
+  else if(modo==="fin" && !finHayDatos() && !LIBRE.includes(v)) html=modVacio("financiera","fcarga");
+  else if(modo==="inv" && !invHayDatos() && !LIBRE.includes(v)) html=modVacio("de inversiones","icarga");
   else html=VISTAS[v]();
   $("#view").innerHTML=html;
   if(v==="carga") initCarga();
   if(v==="fcarga") initFCarga();
+  if(v==="icarga") initICarga();
   if(v==="ia") pintarChat();
   if(v==="fia") pintarFChat();
+  if(v==="iia") pintarIChat();
   window.scrollTo(0,0);
 }
-function finVacioVista(){
-  return `<div class="card"><div class="bd"><div class="empty"><div class="big">▦</div><p>Todavía no se ha cargado la matriz financiera.</p>
-    <button class="btn orange" onclick="ir('fcarga')">Cargar la matriz financiera</button></div></div></div>`;
+function modVacio(nombre,destino){
+  return `<div class="card"><div class="bd"><div class="empty"><div class="big">▦</div><p>Todavía no se ha cargado la matriz ${nombre}.</p>
+    ${puedeCargar()?`<button class="btn orange" onclick="ir('${destino}')">Cargar la matriz ${nombre}</button>`:'<p class="mini">Solicite a la dirección la publicación de la matriz.</p>'}</div></div></div>`;
 }
 
 /* ---------- barra de selección de meses ---------- */
@@ -2273,7 +2765,18 @@ function toggleMes(i){
 }
 function pintarMeses(){
   const host=$("#mesbar");
-  if(LIBRE.includes(vista)&&vista!=="datos"&&vista!=="fdatos"){ host.style.display="none"; return; }
+  if(LIBRE.includes(vista)&&!["datos","fdatos","idatos"].includes(vista)){ host.style.display="none"; return; }
+  if(modo==="inv"){
+    if(!invHayDatos()){ host.style.display="none"; return; }
+    const A=invAcum();
+    host.style.display="flex";
+    host.innerHTML='<span class="lb">Corte del portafolio</span>'+
+      `<span class="mb on">${esc(invCorte())}</span>`+
+      '<span class="sep"></span>'+
+      `<span class="mini">${A.n} instrumentos · ${A.porEntidad.length} entidades · capital ${M0(A.capital)}</span>`+
+      `<span class="per">Tasa ponderada ${PC(A.tasaPond,2)}</span>`;
+    return;
+  }
   host.style.display="flex";
   const dis=mesesDisponibles(), sel=selActual();
   if(!dis.length){ host.innerHTML='<span class="lb">Seleccione los meses a analizar</span><span class="mini">Cargue primero la matriz.</span>'; return; }
@@ -2303,6 +2806,13 @@ function presetMes(p){
 
 /* ---------- barra lateral, alertas y reloj ---------- */
 function pintarSidebar(){
+  if(modo==="inv"){
+    $("#nb1l").textContent="Capital invertido";
+    $("#nb1").textContent= invHayDatos()?M0(invAcum().capital):"—";
+    $("#nb2").textContent= invHayDatos()?(invAcum().n+" instrumentos"):"—";
+    $("#nb3").textContent= I.cargadoEn?new Date(I.cargadoEn).toLocaleDateString("es-EC"):"—";
+    return;
+  }
   if(modo==="fin"){
     $("#nb1l").textContent="Resultado del período";
     $("#nb1").textContent= finHayDatos()?M0(finAcum().y26.resultado):"—";
@@ -2317,14 +2827,17 @@ function pintarSidebar(){
 }
 function pintarAlerta(){
   const h=$("#alertHost");
-  const sinDatos = modo==="fin" ? !finHayDatos() : (!S.cargadoEn && !S.meses.some(m=>m.egr||m.ce));
+  const sinDatos = modo==="fin" ? !finHayDatos() : (modo==="inv" ? !invHayDatos() : (!S.cargadoEn && !S.meses.some(m=>m.egr||m.ce)));
+  const nom = modo==="fin"?"financiero":(modo==="inv"?"de inversiones":"de producción");
+  const dst = modo==="fin"?"fcarga":(modo==="inv"?"icarga":"carga");
   if(sinDatos){
-    h.innerHTML=`<div class="alertbar noprint"><b>Sin matriz cargada.</b> Suba el archivo ${modo==="fin"?"financiero":"de producción"} para activar el panel. <a style="color:#fff;text-decoration:underline;cursor:pointer" onclick="ir('${modo==="fin"?"fcarga":"carga"}')">Ir a la carga</a></div>`;
+    h.innerHTML=`<div class="alertbar noprint"><b>Sin matriz cargada.</b> Suba el archivo ${nom} para activar el panel.${puedeCargar()?` <a style="color:#fff;text-decoration:underline;cursor:pointer" onclick="ir('${dst}')">Ir a la carga</a>`:""}</div>`;
     return;
   }
-  const AL = modo==="fin" ? finAlertas() : alertas();
+  const AL = modo==="fin" ? finAlertas() : (modo==="inv" ? invAlertas() : alertas());
+  const det = modo==="fin"?"fkpis":(modo==="inv"?"ikpis":"kpis");
   h.innerHTML = AL.length
-    ? `<div class="alertbar ${AL.some(a=>a.g==="bad")?"":"warn"} noprint"><b>${AL.length} punto(s) requieren acción directiva</b> — ${esc(AL.map(a=>a.n).join(" · "))} <a style="color:#fff;text-decoration:underline;cursor:pointer;margin-left:auto" onclick="ir('${modo==="fin"?"fkpis":"kpis"}')">Ver detalle</a></div>`
+    ? `<div class="alertbar ${AL.some(a=>a.g==="bad")?"":"warn"} noprint"><b>${AL.length} punto(s) requieren acción directiva</b> — ${esc(AL.map(a=>a.n).join(" · "))} <a style="color:#fff;text-decoration:underline;cursor:pointer;margin-left:auto" onclick="ir('${det}')">Ver detalle</a></div>`
     : '<div class="alertbar ok noprint">Todos los indicadores con meta definida se encuentran dentro de los rangos institucionales.</div>';
 }
 function reloj(){
@@ -2369,12 +2882,13 @@ function mostrarApp(){
 function arrancarLocal(){
   if(!restaurar()) blank();
   if(!finRestaurar()) finVacio();
+  if(!invRestaurar()) invVacio();
   S.apiKey=store.get("hh_key")||"";
   modo="prod";
   ir(S.cargadoEn?"panel":(puedeCargar()?"carga":"panel"));
 }
 async function arrancarNube(){
-  restaurar(); finRestaurar();
+  restaurar(); finRestaurar(); invRestaurar();
   S.apiKey=store.get("hh_key")||"";
   modo="prod";
   $("#view").innerHTML='<div class="card"><div class="bd"><div class="empty"><div class="big">◔</div><p>Cargando la información institucional…</p></div></div></div>';
@@ -2386,7 +2900,7 @@ async function salir(){
   store.del("hh_user"); location.reload();
 }
 document.addEventListener("DOMContentLoaded", async ()=>{
-  blank(); finVacio();
+  blank(); finVacio(); invVacio();
   sbInit();
   $("#lbtn").onclick=entrar;
   $("#lp").onkeydown=e=>{ if(e.key==="Enter") entrar(); };
