@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gestión Hospitalaria · Hospital Humanitario</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -16,7 +16,7 @@
   --r:10px;
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;max-width:100%}
 body{
   font-family:"Segoe UI",Roboto,-apple-system,"Helvetica Neue",Arial,sans-serif;
   background:var(--bg); color:var(--ink); font-size:14px; line-height:1.45;
@@ -46,6 +46,22 @@ a{color:var(--blue)}
   background:#fbfcfe;transition:border-color .15s,box-shadow .15s
 }
 .field input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(46,109,164,.15)}
+.field .conojo{position:relative}
+.field .conojo input{padding-right:44px}
+.field .ojo{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  width:32px;height:32px;border:0;background:transparent;cursor:pointer;
+  color:var(--muted);font-size:15px;line-height:1;border-radius:6px
+}
+.field .ojo:hover{background:#eef2f7;color:var(--navy)}
+#login .autor{text-align:center;font-size:11px;color:#8fa8c0;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+#login .autor b{color:#6b7b8c;font-weight:600}
+.avisoses{
+  position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:80;
+  background:var(--navy);color:#fff;padding:12px 16px;border-radius:10px;font-size:13px;
+  box-shadow:0 12px 32px rgba(6,20,35,.35);display:flex;align-items:center;gap:12px;max-width:92vw
+}
+.avisoses button{background:var(--orange);border:0;color:#fff;padding:7px 12px;border-radius:7px;font-size:12.5px;cursor:pointer;font-weight:600}
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   padding:11px 16px;border:0;border-radius:8px;background:var(--navy);color:#fff;
@@ -132,10 +148,16 @@ a{color:var(--blue)}
 .card>.bd.flush{padding:0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.grid2>*,.grid3>*{min-width:0;max-width:100%}
+.card{max-width:100%}
 @media(max-width:1080px){.grid2,.grid3{grid-template-columns:1fr}}
 
 /* ---------- TABLES ---------- */
-.tblwrap{overflow-x:auto}
+.tblwrap{
+  overflow-x:auto;overflow-y:hidden;max-width:100%;
+  -webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior-x:contain
+}
+.scrollhint{display:none;font-size:10.5px;color:var(--muted);margin:7px 2px 0}
 table.t{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
 table.t th{
   background:#eef2f7;color:var(--navy);font-weight:600;text-align:right;padding:9px 10px;
@@ -174,7 +196,9 @@ table.t .grp th:first-child{background:#eef2f7}
 .note.bad{background:#fdeceb;border-color:var(--red)}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-bottom:10px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
-.bars{display:block;width:100%;height:auto}
+.bars{display:block;width:100%;max-width:100%;height:auto}
+.donutwrap{width:100%;max-width:300px;margin:0 auto}
+.card>.bd,.card>.hd{max-width:100%}
 .empty{text-align:center;padding:46px 20px;color:var(--muted)}
 .empty .big{font-size:40px;margin-bottom:10px;opacity:.5}
 
@@ -215,6 +239,15 @@ table.t .grp th:first-child{background:#eef2f7}
 .mv p{color:#d3e2ef;font-size:12.5px;margin:0}
 @media(max-width:900px){.mv{grid-template-columns:1fr}}
 
+
+/* ---------- MENÚ MÓVIL ---------- */
+.burger{
+  display:none;align-items:center;justify-content:center;width:38px;height:38px;flex:0 0 38px;
+  border:1px solid #ccd6e0;background:#fff;border-radius:8px;color:var(--navy);font-size:17px;cursor:pointer
+}
+.burger:hover{background:#eef2f7}
+.backdrop{position:fixed;inset:0;background:rgba(10,22,35,.5);z-index:55;display:none}
+.backdrop.on{display:block}
 
 /* ---------- MÓDULO Y BARRA DE MESES ---------- */
 .modsw{display:flex;gap:5px;padding:12px 10px 4px}
@@ -257,15 +290,92 @@ table.t .grp th:first-child{background:#eef2f7}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 .printonly{display:none}
+
+/* =====================  TELÉFONOS Y TABLETAS  ===================== */
 @media(max-width:860px){
-  .layout{flex-direction:column}
-  .side{width:100%;flex:none;height:auto;position:static}
-  .side nav{display:flex;flex-wrap:wrap}
-  .side nav a{flex:1 1 44%}
-  .wrap{padding:14px}
-  .rep section{padding:18px}
-  .rep .cover{padding:30px 22px}
+  .burger{display:inline-flex}
+  .layout{flex-direction:row}
+  .side{
+    position:fixed;left:0;top:0;bottom:0;width:264px;flex:none;height:100vh;height:100dvh;
+    z-index:60;transform:translateX(-100%);transition:transform .22s ease;
+    box-shadow:0 0 40px rgba(6,20,35,.45)
+  }
+  .side.open{transform:none}
+  .side nav a{padding:11px 14px;font-size:13.5px}
+  .main{width:100%}
+  .topbar{padding:9px 12px;gap:9px;position:sticky}
+  .topbar .ttl b{font-size:11px;letter-spacing:0;line-height:1.25}
+  .topbar .ttl span{font-size:10px}
+  .clock{display:none}
+  .topbar .btn{padding:8px 11px;font-size:12px}
+  .mesbar{padding:8px 12px;gap:5px}
+  .mesbar .lb{width:100%;margin:0 0 3px}
+  .mesbar .mb{min-width:0;flex:1 1 18%;padding:7px 4px;font-size:11.5px}
+  .mesbar .sep{display:none}
+  .mesbar .pr{flex:1 1 28%;padding:7px 6px;font-size:11px;text-align:center}
+  .mesbar .per{width:100%;margin:6px 0 0;text-align:center}
+  .alertbar{padding:9px 12px;font-size:11.5px;align-items:flex-start;flex-wrap:wrap}
+  .wrap{padding:12px 12px 40px}
+
+  /* el anillo se mantiene compacto: los porcentajes van dentro del arco */
+  .donutwrap{max-width:min(228px,68vw)}
+  /* las tablas de pocas columnas se ajustan al ancho, sin desplazamiento */
+  table.t.t-compacta{white-space:normal;table-layout:fixed;width:100%;font-size:11px}
+  table.t.t-compacta th,table.t.t-compacta td{padding:6px 5px;word-break:break-word}
+  table.t.t-compacta th.l,table.t.t-compacta td.l{width:34%}
+  table.t.t-compacta th.l:first-child,table.t.t-compacta td.l:first-child{position:static;box-shadow:none}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:9px;margin-bottom:14px}
+  .kpi{min-height:86px;padding:12px 13px;border-radius:9px}
+  .kpi .lb{font-size:9.5px;letter-spacing:.05em;margin-bottom:5px}
+  .kpi .vl{font-size:22px}
+  .kpi .sb{font-size:10.5px;margin-top:5px}
+  .kpi:after{width:74px;height:74px;right:-20px;bottom:-26px}
+
+  .card{margin-bottom:14px}
+  .card>.hd{padding:11px 13px}
+  .card>.hd h3{font-size:13px}
+  .card>.bd{padding:12px}
+  .grid2,.grid3{gap:14px}
+
+  table.t{font-size:11.5px}
+  table.t th{padding:7px 8px;font-size:10.5px;position:static}
+  table.t td{padding:6px 8px}
+  .tblwrap{position:relative;padding-bottom:2px}
+  .scrollhint{display:block}
+  /* la primera columna queda fija para no perder la referencia al desplazarse */
+  table.t th.l:first-child,table.t td.l:first-child{
+    position:sticky;left:0;z-index:2;background:#fff;box-shadow:1px 0 0 #e8edf3
+  }
+  table.t th.l:first-child{background:#eef2f7}
+  table.t tr.tot td.l:first-child{background:#f2f6fa}
+  table.t tbody tr:hover td.l:first-child{background:#f8fafc}
+  table.t .grp th:first-child{position:sticky;left:0;z-index:2}
+
+  .rep .cover{padding:28px 20px}
   .rep .cover h1{font-size:20px;max-width:100%}
+  .rep .cover .sub{font-size:13px}
+  .rep section{padding:18px 14px}
+  .rep h2{font-size:16px}
+  .rep h3{font-size:13px}
+  .rep p,.rep ul{font-size:12.5px}
+  .rep .stat{grid-template-columns:1fr 1fr;gap:9px}
+  .rep .stat div{padding:10px 11px}
+  .rep .stat b{font-size:17px}
+  .rep .stat span{font-size:10.5px}
+  .rep section>div[style*="grid-template-columns"]{display:block!important}
+  .mv{grid-template-columns:1fr}
+
+  .chat{height:auto;min-height:0}
+  .msgs{max-height:56vh;min-height:230px}
+  .msg{max-width:90%}
+  .drop{padding:24px 14px}
+  .modsw button{font-size:11px;padding:8px 3px}
+}
+@media(max-width:420px){
+  .kpis{grid-template-columns:1fr 1fr}
+  .kpi .vl{font-size:20px}
+  .rep .stat{grid-template-columns:1fr}
+  .mesbar .mb{flex:1 1 22%}
 }
 </style>
 </head>
@@ -286,16 +396,21 @@ table.t .grp th:first-child{background:#eef2f7}
       </div>
       <div class="field">
         <label for="lp">Contraseña</label>
-        <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••">
+        <div class="conojo">
+          <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••">
+          <button type="button" class="ojo" id="verClave" aria-label="Mostrar u ocultar la contraseña" title="Mostrar contraseña">👁</button>
+        </div>
       </div>
       <button class="btn block" id="lbtn">Ingresar al sistema</button>
       <div class="foot">Fundación Pablo Jaramillo Crespo · Cuenca, Ecuador<br><span id="lmodo" class="mini"></span></div>
+      <div class="autor">Desarrollado por <b>Ricardo Ganzino</b></div>
     </div>
   </div>
 </div>
 
 <!-- ============ APP ============ -->
 <div id="app">
+<div class="backdrop noprint" id="backdrop"></div>
 <div class="layout">
 
   <aside class="side noprint">
@@ -324,11 +439,15 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Meses cargados</span><b class="hl" id="nb2">0/12</b></div>
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
+      <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-6
+      </div>
     </div>
   </aside>
 
   <div class="main">
     <header class="topbar noprint">
+      <button class="burger" id="btnMenu" aria-label="Menú">☰</button>
       <div class="ttl">
         <b>HOSPITAL HUMANITARIO · FUNDACIÓN PABLO JARAMILLO CRESPO</b>
         <span id="tbSub">Informe de gestión hospitalaria</span>
@@ -410,12 +529,12 @@ async function cargarDesdeNube(){
 /* ---------- asistente de análisis a través de la función serverless ---------- */
 async function preguntarIA(sistema,contexto,pregunta){
   /* 1) proxy en Netlify (clave protegida en el servidor) */
-  if(CFG.FUNCION_IA){
+  if(CFG.FUNCION_IA && location.protocol.startsWith("http")){
     try{
       const r=await fetch(CFG.FUNCION_IA,{method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({sistema,contexto,pregunta})});
       if(r.ok){ const d=await r.json(); if(d && d.texto) return d.texto; }
-    }catch(e){}
+    }catch(e){ /* la función no está disponible: se usa el análisis local */ }
   }
   /* 2) clave personal guardada en el navegador o entorno de pruebas */
   if(S.apiKey || location.hostname.includes("claude")){
@@ -723,12 +842,18 @@ function misionSocial(serie){
 /* =======================================================================
    GRÁFICOS (SVG puro, sin librerías externas — imprime y exporta bien)
    ======================================================================= */
+/* En pantallas angostas se reduce el lienzo del SVG: al escalarse a un
+   ancho menor, un viewBox más pequeño mantiene legibles textos y barras. */
+const MOVIL = ()=> (typeof window!=="undefined" && window.innerWidth<=760);
+const ANCHO = ()=> MOVIL()?390:720;
+const TXT   = (m,d)=> MOVIL()?m:d;
+
 function ejeY(max){
   const p=[1,2,2.5,5,10]; let paso=1,e=0;
   while(true){ for(const q of p){ paso=q*Math.pow(10,e); if(max/paso<=5) return {paso,top:Math.ceil(max/paso)*paso}; } e++; if(e>9) return {paso:max/4||1,top:max||1}; }
 }
 function chBars(labels,series,o={}){
-  const W=o.w||720,H=o.h||260,ml=56,mr=10,mt=14,mb=30;
+  const W=o.w||ANCHO(), H=o.h||260, ml=TXT(46,56), mr=TXT(6,10), mt=14, mb=TXT(26,30);
   const iw=W-ml-mr, ih=H-mt-mb;
   const vals=series.flatMap(s=>s.values.map(v=>v||0));
   const mx=Math.max(0,...vals), mn=Math.min(0,...vals);
@@ -736,26 +861,27 @@ function chBars(labels,series,o={}){
   const top=eMax.top, bot=mn<0?-Math.ceil(Math.abs(mn)/paso)*paso:0;
   const span=top-bot||1;
   const y0=v=>mt+ih-((v-bot)/span)*ih;
-  const gw=iw/labels.length, bw=Math.min(26,(gw*0.66)/series.length);
+  const gw=iw/labels.length, bw=Math.max(3,Math.min(TXT(16,26),(gw*0.72)/series.length));
   let g='';
   for(let v=bot;v<=top+1e-9;v+=paso){
     const y=y0(v);
     g+=`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}" stroke="${Math.abs(v)<1e-9?"#c8d3de":"#eef2f7"}"/>`+
-       `<text x="${ml-7}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="#8b9aa9">${N(v)}</text>`;
+       `<text x="${ml-5}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="${TXT(9.5,10)}" fill="#8b9aa9">${N(v)}</text>`;
   }
+  const fx=TXT(labels.length>8?9:10.5,10.5);
   labels.forEach((lb,i)=>{
     const cx=ml+gw*i+gw/2, off=(series.length*bw)/2;
     series.forEach((s,j)=>{
       const v=s.values[i]; if(v==null||v===0) return;
       const ya=y0(Math.max(v,0)), yb=y0(Math.min(v,0)), x=cx-off+j*bw;
-      g+=`<rect x="${x.toFixed(1)}" y="${ya.toFixed(1)}" width="${(bw-3).toFixed(1)}" height="${Math.max(1,yb-ya).toFixed(1)}" fill="${s.color}" rx="2" opacity="${v<0?0.85:1}"><title>${esc(lb)} · ${esc(s.name)}: ${N(v)}</title></rect>`;
+      g+=`<rect x="${x.toFixed(1)}" y="${ya.toFixed(1)}" width="${Math.max(2,bw-TXT(2,3)).toFixed(1)}" height="${Math.max(1,yb-ya).toFixed(1)}" fill="${s.color}" rx="2" opacity="${v<0?0.85:1}"><title>${esc(lb)} · ${esc(s.name)}: ${N(v)}</title></rect>`;
     });
-    g+=`<text x="${cx.toFixed(1)}" y="${H-9}" text-anchor="middle" font-size="10.5" fill="#6b7b8c">${esc(lb)}</text>`;
+    g+=`<text x="${cx.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="${fx}" fill="#6b7b8c">${esc(lb)}</text>`;
   });
   return `<svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
 }
 function chLines(labels,series,o={}){
-  const W=o.w||720,H=o.h||260,ml=48,mr=12,mt=14,mb=30;
+  const W=o.w||ANCHO(), H=o.h||260, ml=TXT(42,48), mr=TXT(8,12), mt=14, mb=TXT(26,30);
   const iw=W-ml-mr, ih=H-mt-mb, pct=!!o.pct;
   const vals=series.flatMap(s=>s.values.filter(v=>v!=null));
   const max=Math.max(o.min0?0:0.0001,...vals,o.top||0);
@@ -764,12 +890,12 @@ function chLines(labels,series,o={}){
   for(let v=0;v<=top+1e-9;v+=paso){
     const y=mt+ih-(v/top)*ih;
     g+=`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}" stroke="#eef2f7"/>`+
-       `<text x="${ml-7}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="#8b9aa9">${pct?PC(v,0):N(v)}</text>`;
+       `<text x="${ml-5}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="${TXT(9.5,10)}" fill="#8b9aa9">${pct?PC(v,0):N(v)}</text>`;
   }
   if(o.meta!=null){
     const y=mt+ih-(o.meta/top)*ih;
     g+=`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}" stroke="#cf5049" stroke-width="1.4" stroke-dasharray="5 4"/>`+
-       `<text x="${W-mr}" y="${(y-5).toFixed(1)}" text-anchor="end" font-size="10" fill="#cf5049">Meta ${pct?PC(o.meta,0):N(o.meta)}</text>`;
+       `<text x="${W-mr}" y="${(y-5).toFixed(1)}" text-anchor="end" font-size="${TXT(9.5,10)}" fill="#cf5049">Meta ${pct?PC(o.meta,0):N(o.meta)}</text>`;
   }
   const sx=i=>ml+(labels.length>1?iw*i/(labels.length-1):iw/2);
   series.forEach(s=>{
@@ -782,39 +908,46 @@ function chLines(labels,series,o={}){
     });
     g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round"/>${pts}`;
   });
-  labels.forEach((lb,i)=>{ g+=`<text x="${sx(i).toFixed(1)}" y="${H-9}" text-anchor="middle" font-size="10.5" fill="#6b7b8c">${esc(lb)}</text>`; });
+  const fx2=TXT(labels.length>8?9:10.5,10.5);
+  labels.forEach((lb,i)=>{ g+=`<text x="${sx(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="${fx2}" fill="#6b7b8c">${esc(lb)}</text>`; });
   return `<svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
 }
 function chDonut(items,o={}){
-  const W=o.w||300,H=o.h||300,cx=W/2,cy=H/2,R=Math.min(W,H)/2-34,r=R*0.58;
-  const tot=items.reduce((a,x)=>a+x.value,0)||1, base=o.base||tot; let ang=-Math.PI/2,g='';
+  const W=o.w||300,H=o.h||300,cx=W/2,cy=H/2;
+  const R=Math.min(W,H)/2-6, r=R*0.60;
+  const tot=items.reduce((a,x)=>a+x.value,0)||1, base=o.base||tot;
+  let ang=-Math.PI/2,g='',etq='';
   items.forEach(it=>{
+    if(!(it.value>0)){ return; }
     const a2=ang+(it.value/tot)*Math.PI*2, big=(a2-ang)>Math.PI?1:0;
     const x1=cx+R*Math.cos(ang),y1=cy+R*Math.sin(ang),x2=cx+R*Math.cos(a2),y2=cy+R*Math.sin(a2);
     const x3=cx+r*Math.cos(a2),y3=cy+r*Math.sin(a2),x4=cx+r*Math.cos(ang),y4=cy+r*Math.sin(ang);
-    if(it.value>0){
-      g+=`<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 ${big} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${x3.toFixed(1)} ${y3.toFixed(1)} A${r} ${r} 0 ${big} 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${it.color}"><title>${esc(it.label)}: ${N(it.value)} (${PC(it.value/base)})</title></path>`;
-      const pc=it.value/base;
-      if(pc>0.05){
-        const mid=(ang+a2)/2, lx=cx+(R+16)*Math.cos(mid), ly=cy+(R+16)*Math.sin(mid);
-        g+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${Math.cos(mid)<0?"end":"start"}" font-size="10.5" fill="#4a5b6b">${PC(pc,1)}</text>`;
-      }
+    g+=`<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 ${big} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${x3.toFixed(1)} ${y3.toFixed(1)} A${r} ${r} 0 ${big} 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${it.color}"><title>${esc(it.label)}: ${N(it.value)} (${PC(it.value/base)})</title></path>`;
+    /* el porcentaje se escribe dentro del propio arco: así nunca se sale del lienzo */
+    const pc=it.value/base, prop=it.value/tot;
+    if(prop>=0.06){
+      const mid=(ang+a2)/2, rr=(R+r)/2;
+      const lx=cx+rr*Math.cos(mid), ly=cy+rr*Math.sin(mid)+3.5;
+      etq+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="${TXT(12,11.5)}" font-weight="600" fill="#fff" style="paint-order:stroke" stroke="rgba(0,0,0,.18)" stroke-width="2">${PC(pc,1)}</text>`;
     }
     ang=a2;
   });
-  if(o.centro) g+=`<text x="${cx}" y="${cy-2}" text-anchor="middle" font-size="17" font-weight="700" fill="#16324f">${esc(o.centro)}</text>`+
-                  `<text x="${cx}" y="${cy+15}" text-anchor="middle" font-size="10" fill="#6b7b8c">${esc(o.centroSub||"")}</text>`;
-  return `<svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+  g+=etq;
+  if(o.centro) g+=`<text x="${cx}" y="${cy-2}" text-anchor="middle" font-size="${TXT(16,17)}" font-weight="700" fill="#16324f">${esc(o.centro)}</text>`+
+                  `<text x="${cx}" y="${cy+15}" text-anchor="middle" font-size="${TXT(10.5,10)}" fill="#6b7b8c">${esc(o.centroSub||"")}</text>`;
+  return `<div class="donutwrap"><svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg></div>`;
 }
 function chHBar(items,o={}){
-  const rows=items.length,rh=o.rh||23,W=o.w||700,ml=o.ml||146,mr=54,H=rows*rh+22;
+  const rows=items.length, rh=o.rh||23, W=o.w||(MOVIL()?400:700);
+  const ml=MOVIL()?Math.min(o.ml||146,104):(o.ml||146), mr=MOVIL()?42:54, H=rows*rh+22;
+  const corta=s=>{ const t=String(s); return (MOVIL()&&t.length>17)?t.slice(0,16)+"…":t; };
   const max=Math.max(1,...items.map(i=>Math.max(i.v||0,i.v2||0)));
   const iw=W-ml-mr; let g='';
   items.forEach((it,i)=>{
     const y=i*rh+8, dob=it.v2!=null, bh=dob?8:13;
-    g+=`<text x="${ml-8}" y="${(y+(dob?11:11)).toFixed(1)}" text-anchor="end" font-size="11" fill="#3b4c5d">${esc(it.label)}</text>`;
+    g+=`<text x="${ml-6}" y="${(y+11).toFixed(1)}" text-anchor="end" font-size="${TXT(10.5,11)}" fill="#3b4c5d">${esc(corta(it.label))}<title>${esc(it.label)}</title></text>`;
     g+=`<rect x="${ml}" y="${y}" width="${(iw*(it.v/max)).toFixed(1)}" height="${bh}" fill="${o.color||"#2e6da4"}" rx="2"><title>${esc(it.label)} · ${esc(o.n1||"2026")}: ${N(it.v)}</title></rect>`;
-    g+=`<text x="${(ml+iw*(it.v/max)+6).toFixed(1)}" y="${(y+bh-1).toFixed(1)}" font-size="10.5" fill="#54687c">${N(it.v)}</text>`;
+    g+=`<text x="${(ml+iw*(it.v/max)+5).toFixed(1)}" y="${(y+bh-1).toFixed(1)}" font-size="${TXT(9.5,10.5)}" fill="#54687c">${N(it.v)}</text>`;
     if(dob) g+=`<rect x="${ml}" y="${y+bh+2}" width="${(iw*(it.v2/max)).toFixed(1)}" height="${bh}" fill="${o.color2||"#f0b166"}" rx="2"><title>${esc(it.label)} · ${esc(o.n2||"2025")}: ${N(it.v2)}</title></rect>`;
   });
   return `<svg class="bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
@@ -831,11 +964,12 @@ function card(t,sub,bd,extra=""){
   return `<div class="card"><div class="hd"><div><h3>${t}</h3>${sub?`<p>${sub}</p>`:""}</div><div class="sp"></div>${extra}</div><div class="bd">${bd}</div></div>`;
 }
 function tabla(cols,rows,pre=""){
-  let h='<div class="tblwrap"><table class="t"><thead>'+pre+"<tr>";
+  const compacta = cols.length<=6 ? " t-compacta" : "";
+  let h='<div class="tblwrap"><table class="t'+compacta+'"><thead>'+pre+"<tr>";
   cols.forEach(c=>h+=`<th class="${c.l?"l":""}">${c.t}</th>`);
   h+="</tr></thead><tbody>";
   rows.forEach(r=>{ h+=`<tr class="${r.cls||""}">`+r.c.map((v,i)=>`<td class="${cols[i]&&cols[i].l?"l":""}">${v}</td>`).join("")+"</tr>"; });
-  return h+"</tbody></table></div>";
+  return h+'</tbody></table></div><p class="scrollhint">Deslice la tabla hacia los lados para ver todas las columnas →</p>';
 }
 const mesesLb = ()=>MS().map(i=>MESC[i]);
 const serieMes = f => MS().map(i=>f(S.meses[i]));
@@ -2704,9 +2838,20 @@ function pintarNav(){
   $("#navHost").innerHTML = NAV[modo].map(s=>({g:s.g,it:s.it.filter(i=>puedeCargar()||!["carga","fcarga"].includes(i[0]))})).filter(s=>s.it.length).map(s=>
     `<div class="navgrp">${s.g}</div><nav>`+s.it.map(([v,ic,t])=>
       `<a data-v="${v}" class="${v===vista?"on":""}"><span class="ic">${ic}</span> ${t}</a>`).join("")+"</nav>").join("");
-  $$("#navHost a").forEach(a=>a.onclick=()=>ir(a.dataset.v));
+  $$("#navHost a").forEach(a=>a.onclick=()=>{ ir(a.dataset.v); cerrarMenu(); });
   $$(".modsw button").forEach(b=>b.classList.toggle("on",b.dataset.mod===modo));
 }
+/* el aviso de desplazamiento solo aparece en las tablas que realmente se salen */
+function ajustarTablas(){
+  $$(".tblwrap").forEach(w=>{
+    const h=w.nextElementSibling;
+    if(h&&h.classList.contains("scrollhint")) h.style.display=(w.scrollWidth>w.clientWidth+4)?"":"none";
+  });
+}
+function abrirMenu(){ $(".side").classList.add("open"); $("#backdrop").classList.add("on"); }
+function cerrarMenu(){ $(".side").classList.remove("open"); $("#backdrop").classList.remove("on"); }
+function alternarMenu(){ $(".side").classList.contains("open")?cerrarMenu():abrirMenu(); }
+
 function cambiarModulo(m){
   if(modo===m) return;
   modo=m;
@@ -2738,6 +2883,7 @@ function ir(v){
   if(v==="ia") pintarChat();
   if(v==="fia") pintarFChat();
   if(v==="iia") pintarIChat();
+  ajustarTablas();
   window.scrollTo(0,0);
 }
 function modVacio(nombre,destino){
@@ -2858,7 +3004,11 @@ async function entrar(){
       if(error) throw error;
       await sesionIniciada(data.user);
     }catch(err){
-      e.textContent = /Invalid login/i.test(err.message||"") ? "Correo o contraseña incorrectos." : ("No se pudo iniciar sesión: "+(err.message||"error de conexión"));
+      const m=String(err.message||"");
+      e.textContent = /Invalid login/i.test(m) ? "Correo o contraseña incorrectos."
+        : (/Failed to fetch|NetworkError|Load failed/i.test(m)
+            ? "No hay conexión con la base institucional. Revise su red e intente de nuevo."
+            : "No se pudo iniciar sesión: "+(m||"error de conexión"));
       e.style.display="block";
     }finally{ b.disabled=false; b.textContent="Ingresar al sistema"; }
     return;
@@ -2878,6 +3028,7 @@ async function sesionIniciada(user){
 function mostrarApp(){
   $("#login").style.display="none"; $("#app").style.display="block";
   $("#uName").textContent=S.user.nombre; $("#uRole").textContent=S.user.rol;
+  vigilarActividad();
 }
 function arrancarLocal(){
   if(!restaurar()) blank();
@@ -2895,10 +3046,58 @@ async function arrancarNube(){
   try{ await cargarDesdeNube(); }catch(e){}
   ir(S.cargadoEn?"panel":(puedeCargar()?"carga":"panel"));
 }
+/* =======================================================================
+   CIERRE AUTOMÁTICO POR INACTIVIDAD
+   ======================================================================= */
+const INACTIVIDAD_MIN = 20;      // minutos sin actividad antes de cerrar
+const AVISO_SEG = 60;            // aviso previo, en segundos
+let tCierre=null, tAviso=null, ultimoToque=0;
+
+function reiniciarInactividad(){
+  if(!S.user) return;
+  const ahora=Date.now();
+  if(ahora-ultimoToque<10000) return;   // no reprograma más de una vez cada 10 s
+  ultimoToque=ahora;
+  clearTimeout(tCierre); clearTimeout(tAviso);
+  quitarAviso();
+  tAviso =setTimeout(mostrarAviso, (INACTIVIDAD_MIN*60 - AVISO_SEG)*1000);
+  tCierre=setTimeout(()=>cerrarPorInactividad(), INACTIVIDAD_MIN*60*1000);
+}
+function quitarAviso(){ const a=document.getElementById("avisoSesion"); if(a) a.remove(); }
+function mostrarAviso(){
+  quitarAviso();
+  const d=document.createElement("div");
+  d.className="avisoses noprint"; d.id="avisoSesion";
+  d.innerHTML='<span>Su sesión se cerrará en un minuto por inactividad.</span><button type="button">Seguir trabajando</button>';
+  d.querySelector("button").onclick=()=>{ ultimoToque=0; reiniciarInactividad(); };
+  document.body.appendChild(d);
+}
+async function cerrarPorInactividad(){
+  clearTimeout(tCierre); clearTimeout(tAviso); quitarAviso();
+  store.set("hh_cierre","1");
+  try{ if(enNube()) await sb.auth.signOut(); }catch(e){}
+  store.del("hh_user");
+  location.reload();
+}
+function vigilarActividad(){
+  ["click","keydown","touchstart","scroll","wheel","pointerdown"].forEach(ev=>
+    window.addEventListener(ev, reiniciarInactividad, {passive:true}));
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) reiniciarInactividad(); });
+  ultimoToque=0; reiniciarInactividad();
+}
+
 async function salir(){
+  clearTimeout(tCierre); clearTimeout(tAviso);
   try{ if(enNube()) await sb.auth.signOut(); }catch(e){}
   store.del("hh_user"); location.reload();
 }
+/* Los fallos de red no deben ensuciar la consola ni interrumpir el trabajo:
+   la aplicación sigue funcionando con la copia local de los datos. */
+window.addEventListener("unhandledrejection", ev=>{
+  const m=String((ev.reason&&ev.reason.message)||ev.reason||"");
+  if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(m)) ev.preventDefault();
+});
+
 document.addEventListener("DOMContentLoaded", async ()=>{
   blank(); finVacio(); invVacio();
   sbInit();
@@ -2906,8 +3105,36 @@ document.addEventListener("DOMContentLoaded", async ()=>{
   $("#lp").onkeydown=e=>{ if(e.key==="Enter") entrar(); };
   $("#lu").onkeydown=e=>{ if(e.key==="Enter") $("#lp").focus(); };
   $("#btnOut").onclick=salir;
-  $$(".modsw button").forEach(b=>b.onclick=()=>cambiarModulo(b.dataset.mod));
+  $$(".modsw button").forEach(b=>b.onclick=()=>{ cambiarModulo(b.dataset.mod); cerrarMenu(); });
+  $("#btnMenu").onclick=alternarMenu;
+  const ojo=$("#verClave");
+  if(ojo) ojo.onclick=()=>{
+    const i=$("#lp"), ver=i.type==="password";
+    i.type=ver?"text":"password";
+    ojo.textContent=ver?"🙈":"👁";
+    ojo.title=ver?"Ocultar contraseña":"Mostrar contraseña";
+    i.focus();
+  };
+  if(store.get("hh_cierre")){
+    store.del("hh_cierre");
+    const e=$("#lerr");
+    e.textContent="Su sesión se cerró automáticamente tras 20 minutos sin actividad.";
+    e.style.display="block";
+  }
+  $("#backdrop").onclick=cerrarMenu;
   reloj(); setInterval(reloj,1000);
+
+  /* al girar el teléfono o cambiar el ancho se rehacen los gráficos */
+  let anchoPrev=window.innerWidth, temporizador=null;
+  window.addEventListener("resize",()=>{
+    clearTimeout(temporizador);
+    temporizador=setTimeout(()=>{
+      const antes=anchoPrev<=760, ahora=window.innerWidth<=760;
+      anchoPrev=window.innerWidth;
+      if(antes!==ahora && S.user) ir(vista); else ajustarTablas();
+      if(!ahora) cerrarMenu();
+    },260);
+  });
 
   if(enNube()){
     $("#llu").textContent="Correo electrónico";
@@ -2916,7 +3143,7 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     try{
       const {data}=await sb.auth.getSession();
       if(data && data.session){ await sesionIniciada(data.session.user); return; }
-    }catch(e){}
+    }catch(e){ /* sin conexión: se pide el ingreso normalmente */ }
     $("#lu").focus();
     return;
   }
