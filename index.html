@@ -440,7 +440,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-6
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-7
       </div>
     </div>
   </aside>
@@ -518,12 +518,22 @@ async function nubePublicar(tabla,anio,periodo,datos){
 /* ---------- carga inicial desde la nube ---------- */
 async function cargarDesdeNube(){
   const p=await nubeUltima("matriz_produccion");
-  if(p&&p.datos){ Object.assign(S,p.datos); S.publicadoPor=p.subido_nombre; S.publicadoEn=p.creado_en; guardar(); }
+  if(p&&p.datos){ blank();    Object.assign(S,p.datos); S.publicadoPor=p.subido_nombre; S.publicadoEn=p.creado_en; guardar(); }
   const f=await nubeUltima("matriz_financiera");
-  if(f&&f.datos){ Object.assign(F,f.datos); F.publicadoPor=f.subido_nombre; F.publicadoEn=f.creado_en; finGuardar(); }
+  if(f&&f.datos){ finVacio(); Object.assign(F,f.datos); F.publicadoPor=f.subido_nombre; F.publicadoEn=f.creado_en; finGuardar(); }
   const v=await nubeUltima("matriz_inversiones");
-  if(v&&v.datos){ Object.assign(I,v.datos); invRehidratar(); I.publicadoPor=v.subido_nombre; I.publicadoEn=v.creado_en; invGuardar(); }
+  if(v&&v.datos){ invVacio(); Object.assign(I,v.datos); invRehidratar(); I.publicadoPor=v.subido_nombre; I.publicadoEn=v.creado_en; invGuardar(); }
   return {p:!!p,f:!!f,i:!!v};
+}
+
+/* ---------- recarga manual desde la base institucional ---------- */
+async function recargarNube(destino){
+  if(!enNube()){ alert("La aplicación está en modo local: no hay base institucional que consultar."); return; }
+  try{
+    await cargarDesdeNube();
+    pintarSidebar(); pintarMeses(); pintarAlerta();
+    ir(destino);
+  }catch(e){ alert("No se pudo consultar la base institucional: "+(e.message||"error de conexión")); }
 }
 
 /* ---------- asistente de análisis a través de la función serverless ---------- */
@@ -1481,6 +1491,7 @@ function vCarga(){
         ${hay?`<div class="note" style="margin-top:14px"><b>Matriz vigente:</b> ${etiquetaPeriodo(S.sel&&S.sel.length?S.sel:MS())} ${S.anio}. Última carga el ${new Date(S.cargadoEn).toLocaleString("es-EC")}.${S.publicadoPor?`<br>Publicada por ${esc(S.publicadoPor)}${S.publicadoEn?" el "+new Date(S.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_data');blank();S.cargadoEn=null;S.corte=0;S.sel=[];ir('carga');}">Limpiar la copia local</button>
+          <button class="btn ghost sm" onclick="recargarNube('carga')">Traer la última versión publicada</button>
         </div>
       </div>
       <div>
@@ -1500,11 +1511,11 @@ function vCarga(){
 }
 function initCarga(){
   const d=$("#drop"), f=$("#file"); if(!d) return;
-  d.onclick=()=>f.click();
+  d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
   d.ondragleave=()=>d.classList.remove("hot");
-  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerArchivo(e.dataTransfer.files[0]);};
-  f.onchange=e=>{ if(e.target.files[0]) leerArchivo(e.target.files[0]); };
+  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerArchivo(e.dataTransfer.files[0]); f.value="";};
+  f.onchange=e=>{ const a=e.target.files[0]; if(a) leerArchivo(a); e.target.value=""; };
 }
 function leerArchivo(file){
   const msg=$("#cargaMsg");
@@ -1513,9 +1524,13 @@ function leerArchivo(file){
   const r=new FileReader();
   r.onload=ev=>{
     try{
+      blank();                       /* se descarta por completo la matriz anterior */
+      S.publicadoPor=null; S.publicadoEn=null;
       const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
       parseLibro(wb);
-      const det=`Período detectado: ${etiquetaPeriodo(S.sel)} ${S.anio} · ${S.ceEsp.length} especialidades de consulta externa · ${S.cirEsp.length} especialidades quirúrgicas · ${S.deptos.length} departamentos.`;
+      const R=acum();
+      const det=`Período detectado: ${etiquetaPeriodo(S.sel)} ${S.anio} · ${S.ceEsp.length} especialidades de consulta externa · ${S.cirEsp.length} especialidades quirúrgicas · ${S.deptos.length} departamentos.`+
+        `<br><span class="mini">Verifique los totales leídos: ${N(R.egr)} egresos · ${N(R.ce)} consultas externas · ${N(R.em)} emergencias · ${N(R.cir)} cirugías.</span>`;
       msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz leída.</b><br>${det}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarProduccion(det);
@@ -2206,8 +2221,9 @@ function iCarga(){
         </div>
         <div id="icargaMsg" style="margin-top:14px"></div>
         ${I.cargadoEn?`<div class="note" style="margin-top:14px"><b>Matriz vigente:</b> corte al ${invCorte()}. Última carga el ${new Date(I.cargadoEn).toLocaleString("es-EC")}.${I.publicadoPor?`<br>Publicada por ${esc(I.publicadoPor)}${I.publicadoEn?" el "+new Date(I.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
-        <div style="margin-top:14px">
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_inv');invVacio();ir('icarga');}">Limpiar la copia local</button>
+          <button class="btn ghost sm" onclick="recargarNube('icarga')">Traer la última versión publicada</button>
         </div>
       </div>
       <div>
@@ -2227,11 +2243,11 @@ function iCarga(){
 }
 function initICarga(){
   const d=$("#idrop"), f=$("#ifile"); if(!d) return;
-  d.onclick=()=>f.click();
+  d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
   d.ondragleave=()=>d.classList.remove("hot");
-  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerInversiones(e.dataTransfer.files[0]);};
-  f.onchange=e=>{ if(e.target.files[0]) leerInversiones(e.target.files[0]); };
+  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerInversiones(e.dataTransfer.files[0]); f.value="";};
+  f.onchange=e=>{ const a=e.target.files[0]; if(a) leerInversiones(a); e.target.value=""; };
 }
 function leerInversiones(file){
   const msg=$("#icargaMsg");
@@ -2240,10 +2256,13 @@ function leerInversiones(file){
   const r=new FileReader();
   r.onload=ev=>{
     try{
+      invVacio();                    /* se descarta por completo la matriz anterior */
+      I.publicadoPor=null; I.publicadoEn=null;
       const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true});
       parseInversiones(wb);
       const A=invAcum();
-      const det=`Corte al ${invCorte()} · ${A.n} instrumentos · ${I.bloques.length} bloques · capital ${M(A.capital)}.`;
+      const det=`Corte al ${invCorte()} · ${A.n} instrumentos · ${I.bloques.length} bloques.`+
+        `<br><span class="mini">Verifique los totales leídos: capital ${M(A.capital)} · intereses ${M(A.interes)} · tasa ponderada ${PC(A.tasaPond,2)}.</span>`;
       msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarInversiones(det);
@@ -2656,8 +2675,9 @@ function fCarga(){
         </div>
         <div id="fcargaMsg" style="margin-top:14px"></div>
         ${F.cargadoEn?`<div class="note" style="margin-top:14px"><b>Matriz financiera vigente:</b> ${etiquetaPeriodo(F.m.map((m,i)=>m.dato?i:-1).filter(i=>i>=0))} ${F.anio}. Última carga el ${new Date(F.cargadoEn).toLocaleString("es-EC")}.${F.publicadoPor?`<br>Publicada por ${esc(F.publicadoPor)}${F.publicadoEn?" el "+new Date(F.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
-        <div style="margin-top:14px">
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_fin');finVacio();F.cargadoEn=null;F.sel=[];ir('fcarga');}">Limpiar la copia local</button>
+          <button class="btn ghost sm" onclick="recargarNube('fcarga')">Traer la última versión publicada</button>
         </div>
       </div>
       <div>
@@ -2675,11 +2695,11 @@ function fCarga(){
 }
 function initFCarga(){
   const d=$("#fdrop"), f=$("#ffile"); if(!d) return;
-  d.onclick=()=>f.click();
+  d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
   d.ondragleave=()=>d.classList.remove("hot");
-  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerFinanciero(e.dataTransfer.files[0]);};
-  f.onchange=e=>{ if(e.target.files[0]) leerFinanciero(e.target.files[0]); };
+  d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerFinanciero(e.dataTransfer.files[0]); f.value="";};
+  f.onchange=e=>{ const a=e.target.files[0]; if(a) leerFinanciero(a); e.target.value=""; };
 }
 function leerFinanciero(file){
   const msg=$("#fcargaMsg");
@@ -2688,9 +2708,13 @@ function leerFinanciero(file){
   const r=new FileReader();
   r.onload=ev=>{
     try{
+      finVacio();                    /* se descarta por completo la matriz anterior */
+      F.publicadoPor=null; F.publicadoEn=null;
       const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
       parseFinanciero(wb);
-      const det=`Meses detectados: ${etiquetaPeriodo(F.sel)} ${F.anio}${F.deuda?" · cartera de la red pública incluida":""}.`;
+      const R=finAcum();
+      const det=`Meses detectados: ${etiquetaPeriodo(F.sel)} ${F.anio}${F.deuda?" · cartera de la red pública incluida":""}.`+
+        `<br><span class="mini">Verifique los totales leídos: ingresos ${M(R.y26.ing)} · costos ${M(R.y26.cos)} · resultado ${M(R.y26.resultado)}.</span>`;
       msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera leída.</b><br>${det}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarFinanciero(det);
