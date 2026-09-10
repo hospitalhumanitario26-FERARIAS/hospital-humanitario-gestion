@@ -440,7 +440,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-7
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-8
       </div>
     </div>
   </aside>
@@ -1488,7 +1488,9 @@ function vCarga(){
           <input type="file" id="file" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="cargaMsg" style="margin-top:14px"></div>
-        ${hay?`<div class="note" style="margin-top:14px"><b>Matriz vigente:</b> ${etiquetaPeriodo(S.sel&&S.sel.length?S.sel:MS())} ${S.anio}. Última carga el ${new Date(S.cargadoEn).toLocaleString("es-EC")}.${S.publicadoPor?`<br>Publicada por ${esc(S.publicadoPor)}${S.publicadoEn?" el "+new Date(S.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
+        ${hay?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
+          ${(()=>{const R=acum();return `${N(R.egr)} egresos · ${N(R.ce)} consultas externas · ${N(R.em)} emergencias · ${N(R.cir)} cirugías · ${N(R.partos)} partos`;})()}
+          <br><b>Período:</b> ${etiquetaPeriodo(S.sel&&S.sel.length?S.sel:MS())} ${S.anio} · leída el ${new Date(S.cargadoEn).toLocaleString("es-EC")}.${S.publicadoPor?`<br>Publicada por ${esc(S.publicadoPor)}${S.publicadoEn?" el "+new Date(S.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_data');blank();S.cargadoEn=null;S.corte=0;S.sel=[];ir('carga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('carga')">Traer la última versión publicada</button>
@@ -1517,6 +1519,11 @@ function initCarga(){
   d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerArchivo(e.dataTransfer.files[0]); f.value="";};
   f.onchange=e=>{ const a=e.target.files[0]; if(a) leerArchivo(a); e.target.value=""; };
 }
+function fichaArchivo(file){
+  const kb=(file.size/1024).toFixed(0);
+  const fm=file.lastModified?new Date(file.lastModified).toLocaleString("es-EC"):"—";
+  return `<span class="mini">Archivo: <b>${esc(file.name)}</b> · ${kb} KB · modificado el ${fm}</span>`;
+}
 function leerArchivo(file){
   const msg=$("#cargaMsg");
   if(typeof XLSX==="undefined"){ msg.innerHTML='<div class="note bad"><b>No se pudo cargar el lector de Excel.</b><br>Verifique la conexión o habilite el dominio cdn.jsdelivr.net en la política de seguridad del sitio.</div>'; return; }
@@ -1531,7 +1538,7 @@ function leerArchivo(file){
       const R=acum();
       const det=`Período detectado: ${etiquetaPeriodo(S.sel)} ${S.anio} · ${S.ceEsp.length} especialidades de consulta externa · ${S.cirEsp.length} especialidades quirúrgicas · ${S.deptos.length} departamentos.`+
         `<br><span class="mini">Verifique los totales leídos: ${N(R.egr)} egresos · ${N(R.ce)} consultas externas · ${N(R.em)} emergencias · ${N(R.cir)} cirugías.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz leída.</b><br>${det}</div>`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarProduccion(det);
     }catch(err){
@@ -2220,7 +2227,9 @@ function iCarga(){
           <input type="file" id="ifile" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="icargaMsg" style="margin-top:14px"></div>
-        ${I.cargadoEn?`<div class="note" style="margin-top:14px"><b>Matriz vigente:</b> corte al ${invCorte()}. Última carga el ${new Date(I.cargadoEn).toLocaleString("es-EC")}.${I.publicadoPor?`<br>Publicada por ${esc(I.publicadoPor)}${I.publicadoEn?" el "+new Date(I.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
+        ${I.cargadoEn?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
+          ${(()=>{const R=invAcum();return `capital ${M(R.capital)} · intereses ${M(R.interes)} · ${R.n} instrumentos`;})()}
+          <br><b>Corte:</b> ${invCorte()} · leída el ${new Date(I.cargadoEn).toLocaleString("es-EC")}.${I.publicadoPor?`<br>Publicada por ${esc(I.publicadoPor)}${I.publicadoEn?" el "+new Date(I.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_inv');invVacio();ir('icarga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('icarga')">Traer la última versión publicada</button>
@@ -2263,7 +2272,7 @@ function leerInversiones(file){
       const A=invAcum();
       const det=`Corte al ${invCorte()} · ${A.n} instrumentos · ${I.bloques.length} bloques.`+
         `<br><span class="mini">Verifique los totales leídos: capital ${M(A.capital)} · intereses ${M(A.interes)} · tasa ponderada ${PC(A.tasaPond,2)}.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}</div>`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarInversiones(det);
     }catch(err){ msg.innerHTML='<div class="note bad"><b>No se pudo leer el archivo.</b><br>'+esc(err.message)+"</div>"; }
@@ -2674,7 +2683,9 @@ function fCarga(){
           <input type="file" id="ffile" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="fcargaMsg" style="margin-top:14px"></div>
-        ${F.cargadoEn?`<div class="note" style="margin-top:14px"><b>Matriz financiera vigente:</b> ${etiquetaPeriodo(F.m.map((m,i)=>m.dato?i:-1).filter(i=>i>=0))} ${F.anio}. Última carga el ${new Date(F.cargadoEn).toLocaleString("es-EC")}.${F.publicadoPor?`<br>Publicada por ${esc(F.publicadoPor)}${F.publicadoEn?" el "+new Date(F.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
+        ${F.cargadoEn?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
+          ${(()=>{const R=finAcum();return `ingresos ${M(R.y26.ing)} · costos ${M(R.y26.cos)} · resultado ${M(R.y26.resultado)}`;})()}
+          <br><b>Período:</b> ${etiquetaPeriodo(F.m.map((m,i)=>m.dato?i:-1).filter(i=>i>=0))} ${F.anio} · leída el ${new Date(F.cargadoEn).toLocaleString("es-EC")}.${F.publicadoPor?`<br>Publicada por ${esc(F.publicadoPor)}${F.publicadoEn?" el "+new Date(F.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_fin');finVacio();F.cargadoEn=null;F.sel=[];ir('fcarga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('fcarga')">Traer la última versión publicada</button>
@@ -2715,7 +2726,7 @@ function leerFinanciero(file){
       const R=finAcum();
       const det=`Meses detectados: ${etiquetaPeriodo(F.sel)} ${F.anio}${F.deuda?" · cartera de la red pública incluida":""}.`+
         `<br><span class="mini">Verifique los totales leídos: ingresos ${M(R.y26.ing)} · costos ${M(R.y26.cos)} · resultado ${M(R.y26.resultado)}.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera leída.</b><br>${det}</div>`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarFinanciero(det);
     }catch(err){ msg.innerHTML='<div class="note bad"><b>No se pudo leer el archivo.</b><br>'+esc(err.message)+"</div>"; }
