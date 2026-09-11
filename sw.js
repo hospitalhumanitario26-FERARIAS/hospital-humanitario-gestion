@@ -4,7 +4,7 @@
    para que una versión nueva nunca quede atrapada en caché. La caché
    solo entra en juego si no hay conexión, y para íconos y recursos fijos.
    ===================================================================== */
-const CACHE = "hh-gestion-v12";
+const CACHE = "hh-gestion-v14";
 const FIJOS = ["./icono-192.png", "./icono-512.png", "./icono-ios.png", "./manifest.webmanifest"];
 
 self.addEventListener("install", e => {
