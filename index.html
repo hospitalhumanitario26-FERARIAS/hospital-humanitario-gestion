@@ -10,7 +10,7 @@
 <link rel="icon" type="image/png" href="icono-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Gestión HH">
 <meta name="format-detection" content="telephone=no">
 <title>Gestión Hospitalaria · Hospital Humanitario</title>
@@ -123,7 +123,8 @@ a{color:var(--blue)}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{
-  background:#fff;border-bottom:1px solid var(--line);padding:12px 24px;
+  background:#fff;border-bottom:1px solid var(--line);
+  padding:calc(12px + env(safe-area-inset-top)) 24px 12px;
   display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:20
 }
 .topbar .ttl b{display:block;font-size:15px;color:var(--navy)}
@@ -315,7 +316,11 @@ table.t .grp th:first-child{background:#eef2f7}
   .topbar select,.chatin input{font-size:16px}
   /* respeto de las zonas seguras: muesca superior y barra inferior */
   .side{padding-top:env(safe-area-inset-top)}
-  .topbar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .topbar{
+    padding-top:calc(9px + env(safe-area-inset-top));
+    padding-left:max(12px,env(safe-area-inset-left));
+    padding-right:max(12px,env(safe-area-inset-right))
+  }
   .mesbar,.alertbar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
   .wrap{
     padding-left:max(12px,env(safe-area-inset-left));
@@ -335,7 +340,7 @@ table.t .grp th:first-child{background:#eef2f7}
   .side.open{transform:none}
   .side nav a{padding:11px 14px;font-size:13.5px}
   .main{width:100%}
-  .topbar{padding:9px 12px;gap:9px;position:sticky}
+  .topbar{padding:9px 12px;gap:9px;position:sticky;top:0}
   .topbar .ttl b{font-size:11px;letter-spacing:0;line-height:1.25}
   .topbar .ttl span{font-size:10px}
   .clock{display:none}
@@ -475,7 +480,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-13
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-14
       </div>
     </div>
   </aside>
