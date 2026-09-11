@@ -54,6 +54,11 @@ a{color:var(--blue)}
   color:var(--muted);font-size:15px;line-height:1;border-radius:6px
 }
 .field .ojo:hover{background:#eef2f7;color:var(--navy)}
+#login .recordar{
+  display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);
+  margin:2px 0 14px;cursor:pointer;user-select:none
+}
+#login .recordar input{width:16px;height:16px;accent-color:var(--navy);cursor:pointer}
 #login .autor{text-align:center;font-size:11px;color:#8fa8c0;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 #login .autor b{color:#6b7b8c;font-weight:600}
 .avisoses{
@@ -389,19 +394,22 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="sys">Sistema de Gestión Hospitalaria</div>
     </div>
     <div class="body">
+      <form id="lform" method="post" action="#" autocomplete="on">
       <div class="err" id="lerr"></div>
       <div class="field">
         <label for="lu" id="llu">Usuario</label>
-        <input id="lu" type="text" autocomplete="username" placeholder="Su nombre de usuario">
+        <input id="lu" name="username" type="text" autocomplete="username" placeholder="Su nombre de usuario">
       </div>
       <div class="field">
         <label for="lp">Contraseña</label>
         <div class="conojo">
-          <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••">
+          <input id="lp" name="password" type="password" autocomplete="current-password" placeholder="••••••••">
           <button type="button" class="ojo" id="verClave" aria-label="Mostrar u ocultar la contraseña" title="Mostrar contraseña">👁</button>
         </div>
       </div>
-      <button class="btn block" id="lbtn">Ingresar al sistema</button>
+      <label class="recordar"><input type="checkbox" id="lrec"> Recordar mi usuario en este dispositivo</label>
+      <button class="btn block" id="lbtn" type="submit">Ingresar al sistema</button>
+      </form>
       <div class="foot">Fundación Pablo Jaramillo Crespo · Cuenca, Ecuador<br><span id="lmodo" class="mini"></span></div>
       <div class="autor">Desarrollado por <b>Ricardo Ganzino</b></div>
     </div>
@@ -440,7 +448,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-11
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-12
       </div>
     </div>
   </aside>
@@ -3283,10 +3291,15 @@ async function entrar(){
   const usr=USUARIOS.find(x=>x.user.toLowerCase()===u.toLowerCase() && x.pass===p);
   if(!usr){ e.textContent="Usuario o contraseña incorrectos."; e.style.display="block"; return; }
   S.user={user:usr.user,nombre:usr.nombre,rol:usr.rol,puedeCargar:true};
-  store.set("hh_user",usr.user);
+  store.set("hh_user",usr.user); guardarRecordado(usr.user);
   mostrarApp(); arrancarLocal();
 }
+function guardarRecordado(usuario){
+  const ch=$("#lrec");
+  if(ch && ch.checked) store.set("hh_recordar",usuario); else store.del("hh_recordar");
+}
 async function sesionIniciada(user){
+  guardarRecordado(user.email);
   const perfil=await cargarPerfil(user);
   S.user={user:user.email,nombre:perfil.nombre,rol:perfil.rol,puedeCargar:perfil.puedeCargar};
   mostrarApp();
@@ -3368,9 +3381,9 @@ window.addEventListener("unhandledrejection", ev=>{
 document.addEventListener("DOMContentLoaded", async ()=>{
   blank(); finVacio(); invVacio();
   sbInit();
-  $("#lbtn").onclick=entrar;
-  $("#lp").onkeydown=e=>{ if(e.key==="Enter") entrar(); };
-  $("#lu").onkeydown=e=>{ if(e.key==="Enter") $("#lp").focus(); };
+  const form=$("#lform");
+  if(form) form.onsubmit=e=>{ e.preventDefault(); entrar(); };
+  else $("#lbtn").onclick=entrar;
   $("#btnOut").onclick=salir;
   $$(".modsw button").forEach(b=>b.onclick=()=>{ cambiarModulo(b.dataset.mod); cerrarMenu(); });
   $("#btnMenu").onclick=alternarMenu;
@@ -3403,6 +3416,9 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     },260);
   });
 
+  const rec=store.get("hh_recordar");
+  if(rec){ $("#lu").value=rec; const ch=$("#lrec"); if(ch) ch.checked=true; }
+
   if(enNube()){
     $("#llu").textContent="Correo electrónico";
     $("#lu").type="email"; $("#lu").placeholder="usuario@hospitalhumanitario.org";
@@ -3411,13 +3427,13 @@ document.addEventListener("DOMContentLoaded", async ()=>{
       const {data}=await sb.auth.getSession();
       if(data && data.session){ await sesionIniciada(data.session.user); return; }
     }catch(e){ /* sin conexión: se pide el ingreso normalmente */ }
-    $("#lu").focus();
+    ($("#lu").value?$("#lp"):$("#lu")).focus();
     return;
   }
   $("#lmodo").textContent="Modo local · sin conexión a la base institucional";
   const su=store.get("hh_user");
   if(su){ const usr=USUARIOS.find(x=>x.user===su);
     if(usr){ S.user={user:usr.user,nombre:usr.nombre,rol:usr.rol,puedeCargar:true}; mostrarApp(); arrancarLocal(); return; } }
-  $("#lu").focus();
+  ($("#lu").value?$("#lp"):$("#lu")).focus();
 });
 </script>
