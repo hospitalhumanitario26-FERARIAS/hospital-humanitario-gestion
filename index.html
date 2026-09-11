@@ -440,7 +440,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.09-8
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-11
       </div>
     </div>
   </aside>
@@ -526,6 +526,27 @@ async function cargarDesdeNube(){
   return {p:!!p,f:!!f,i:!!v};
 }
 
+/* ---------- estado de lo publicado en la base ---------- */
+async function pintarEstadoNube(tabla, id, resumen){
+  const el=document.getElementById(id); if(!el) return;
+  if(!enNube()){ el.innerHTML='<div class="note">Modo local: no hay base institucional conectada.</div>'; return; }
+  el.innerHTML='<div class="note">Consultando la base institucional…</div>';
+  try{
+    const r=await nubeUltima(tabla);
+    if(!r){
+      el.innerHTML='<div class="note warn"><b>La base institucional no tiene ninguna versión publicada de esta matriz.</b><br>'+
+        'Lo que ve en pantalla proviene solo de este dispositivo.</div>';
+      return;
+    }
+    el.innerHTML='<div class="note"><b>Última versión publicada en la base</b><br>'+
+      esc(r.periodo||"")+" "+(r.anio||"")+" · publicada por "+esc(r.subido_nombre||"—")+
+      " el "+new Date(r.creado_en).toLocaleString("es-EC")+
+      '<br><span class="mini">'+resumen(r.datos||{})+'</span></div>';
+  }catch(e){
+    el.innerHTML='<div class="note bad"><b>No se pudo consultar la base institucional.</b><br>'+esc(e.message||"error de conexión")+'</div>';
+  }
+}
+
 /* ---------- recarga manual desde la base institucional ---------- */
 async function recargarNube(destino){
   if(!enNube()){ alert("La aplicación está en modo local: no hay base institucional que consultar."); return; }
@@ -579,8 +600,8 @@ const USUARIOS = [
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const MESC  = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-const CAT_LB = { a:"Cat. A", b:"Cat. B", i:"Cat. I", c:"Cat. C", d:"Cat. D", sp:"Seguro privado", ex:"Extramural" };
-const CAT_CO = { a:"#8bb8e0", b:"#7a6ab8", i:"#e8a44f", c:"#f4d4a0", d:"#8dc63f", sp:"#d9605a", ex:"#25a0a0" };
+const CAT_LB = { a:"Cat. A", b:"Cat. B", i:"Cat. I", sin:"Sin categorizar", c:"Cat. C", d:"Cat. D", sp:"Seguro privado", ex:"Extramural" };
+const CAT_CO = { a:"#8bb8e0", b:"#7a6ab8", i:"#e8a44f", sin:"#c3ccd6", c:"#f4d4a0", d:"#8dc63f", sp:"#d9605a", ex:"#25a0a0" };
 
 /* ---------- ESTADO ---------------------------------------------------- */
 const S = {
@@ -637,6 +658,77 @@ function blank(){
   S.ceEsp=[]; S.cirEsp=[]; S.deptos=[];
 }
 
+
+/* ---------- lectura de bloques de categoría guiada por encabezados ----------
+   Soporta tanto el formato antiguo (pares 2026/2025 contiguos) como el nuevo,
+   con columnas VAR% intercaladas y encabezados combinados por categoría.     */
+const CAT_CLAVES=[
+  {k:"a",  m:["CAT.A","CATA","CATEGORIA A"]},
+  {k:"b",  m:["CAT.B","CATB","CATEGORIA B"]},
+  {k:"i",  m:["CAT.I","CATI","CATEGORIA I"]},
+  {k:"c",  m:["CAT.C","CATC","CATEGORIA C"]},
+  {k:"d",  m:["CAT.D","CATD","CATEGORIA D"]},
+  {k:"sin",m:["SIN CAT","SINCAT","SIN CATEGORIA","NO CATEGORIZADO"]},
+  {k:"sp", m:["SEG.PRIV","SEGPRIV","SEGURO PRIVADO","SEG PRIV","CAT.SEGURO PRIVADO","CAT.SEG"]},
+  {k:"ex", m:["EXTRAMURAL","EXTRA MURAL","CAT.EXTRAMURAL"]}
+];
+function claveCategoria(txt){
+  const t=norm(txt).replace(/\s+/g," ").trim();
+  if(!t) return null;
+  if(t.startsWith("TOTAL")||t.startsWith("VAR")||t.startsWith("ASM")||t.startsWith("RPIS")) return null;
+  for(const c of CAT_CLAVES) if(c.m.some(x=>t===x||t.startsWith(x))) return c.k;
+  if(/^[ABICD]$/.test(t)) return t.toLowerCase();
+  return null;
+}
+function anioDe(txt){ const m=String(txt||"").match(/(19|20)\d{2}/); return m?+m[0]:null; }
+/* Los años se deducen del propio encabezado del bloque: el mayor es el año
+   corriente y el menor el de comparación. No se infieren de valores sueltos. */
+function mapaCategorias(R,desde,filaEnero){
+  const arma=(pares)=>{
+    const anios=[...new Set(pares.map(x=>x.an))].sort((a,b)=>b-a);
+    if(anios.length<1) return null;
+    const cur=anios[0], pre=anios.length>1?anios[1]:null;
+    const mapa={};
+    pares.forEach(({et,an,c})=>{
+      const clave = an===cur ? et : (an===pre ? et+"25" : null);
+      if(clave && mapa[clave]==null) mapa[clave]=c;
+    });
+    if(Object.keys(mapa).length<4) return null;
+    mapa.__anio=cur;
+    return mapa;
+  };
+  /* (a) encabezado en una sola fila: «Cat.A 2026» dentro de la misma celda */
+  for(let r=filaEnero-1; r>=Math.max(0,filaEnero-4); r--){
+    const row=R[r]||[], pares=[];
+    row.forEach((v,c)=>{ const et=claveCategoria(v), an=anioDe(v); if(et&&an) pares.push({et,an,c}); });
+    const m=arma(pares); if(m) return m;
+  }
+  /* (b) encabezado en dos filas: rótulos arriba, años abajo (con o sin VAR%) */
+  let fa=-1;
+  for(let r=Math.max(0,desde); r<filaEnero; r++){
+    const row=R[r]||[];
+    if(row.filter(v=>anioDe(v)&&String(v).trim().length<=6).length>=2) fa=r;
+  }
+  if(fa>=0){
+    let fc=-1;
+    for(let r=fa-1; r>=Math.max(0,fa-4); r--){
+      if((R[r]||[]).filter(v=>claveCategoria(v)).length>=2){ fc=r; break; }
+    }
+    if(fc>=0){
+      const filaA=R[fa]||[], filaC=R[fc]||[], pares=[];
+      let actual=null;
+      for(let c=0;c<Math.max(filaA.length,filaC.length);c++){
+        const et=claveCategoria(filaC[c]); if(et) actual=et;
+        const v=filaA[c], an=anioDe(v);
+        if(actual && an && String(v).trim().length<=6) pares.push({et:actual,an,c});
+      }
+      const m=arma(pares); if(m) return m;
+    }
+  }
+  return null;
+}
+let ANIO_BASE=2026;   /* año corriente de la matriz; se ajusta al leer el libro */
+
 /* ---------- LECTURA DEL LIBRO EXCEL ----------------------------------- */
 function hoja(wb,...claves){
   for(const k of claves){
@@ -654,15 +746,16 @@ function buscaEnero(R,desde){
   for(let i=desde;i<R.length;i++){ if(norm(cel(R[i],0)).startsWith("ENERO")) return i; }
   return -1;
 }
-function leeBloque(R,ini,map){
+function leeBloque(R,ini,map,base){
   const out=[];
   for(let k=0;k<12;k++){
-    const r=R[ini+k]||[], o={mes:MESES[k]};
-    for(const campo in map) o[campo]=num(cel(r,map[campo]));
+    const r=R[ini+k]||[], o=Object.assign({},base||null,{mes:MESES[k]});
+    for(const campo in map){ if(campo.startsWith("__")) continue; o[campo]=num(cel(r,map[campo])); }
     out.push(o);
   }
   return out;
 }
+const CERO_CAT={a:0,a25:0,b:0,b25:0,i:0,i25:0,c:0,c25:0,d:0,d25:0,sin:0,sin25:0,sp:0,sp25:0,ex:0,ex25:0};
 
 function parseLibro(wb){
   blank();
@@ -676,28 +769,42 @@ function parseLibro(wb){
   S.meses = leeBloque(R,i0,{dias:1,ing:2,egr:3,egr25:4,est:5,est25:6,camaDia:7,em:10,em25:11,ce:12,ce25:13,cir:14,cir25:15,pn:16,pn25:17,pc:18,pc25:19});
   S.meses.forEach((m,k)=>{ if(!m.dias) m.dias=[31,28,31,30,31,30,31,31,30,31,30,31][k]; });
 
-  /* localizar secciones por su encabezado en la columna A */
-  const idxAux=[], idxCat=[];
-  R.forEach((r,i)=>{
-    const t=norm(cel(r,0));
-    if(!t) return;
-    if(t.includes("AUXILIARES DE DIAGNOSTICO") && !t.includes("CATEGORIA")) idxAux.push(i);
-    if(t.includes("CATEGORIA PACIENTE")) idxCat.push({i,t});
-  });
+  /* Cada bloque de doce meses se identifica por lo que contiene su encabezado,
+     no por el título exacto de la sección: así resiste cambios de redacción,
+     columnas VAR% intercaladas o filas añadidas.                              */
+  const textoArriba=(i,n)=>{
+    let t="";
+    for(let r=Math.max(0,i-n); r<i; r++) (R[r]||[]).forEach(v=>{ if(typeof v==="string") t+=" "+norm(v); });
+    return t;
+  };
+  const servicioDe=t=> t.includes("CONSULTA EXTERNA")?"ce"
+    : (t.includes("EMERGENCIA")?"em"
+    : (t.includes("HOSPITALIZ")?"hosp"
+    : (t.includes("AUXILIAR")?"dx":null)));
 
-  if(idxAux.length){
-    const a=buscaEnero(R,idxAux[0]);
-    if(a>0) S.aux=leeBloque(R,a,{colpo:1,colpo25:2,eco:3,eco25:4,ekg:5,ekg25:6,lab:7,lab25:8,pat:9,pat25:10,rad:11,rad25:12,smt:13,smt25:14,tom:15,tom25:16});
+  const mapAux={colpo:1,colpo25:2,eco:3,eco25:4,ekg:5,ekg25:6,lab:7,lab25:8,pat:9,pat25:10,rad:11,rad25:12,smt:13,smt25:14,tom:15,tom25:16};
+  const orden=["ce","em","hosp","dx"];
+  let usados=[], primero=true, auxHecho=false;
+
+  for(let i=0;i<R.length;i++){
+    if(!norm(cel(R[i],0)).startsWith("ENERO")) continue;
+    if(i===i0 && primero){ primero=false; continue; }      /* bloque principal, ya leído */
+
+    const mapCat=mapaCategorias(R,Math.max(0,i-8),i);
+    const enc=textoArriba(i,8);
+    if(mapCat){
+      let sv=servicioDe(enc);
+      if(!sv || usados.includes(sv)) sv=orden.find(x=>!usados.includes(x));
+      if(!sv) continue;
+      usados.push(sv);
+      if(mapCat.__anio>2000 && mapCat.__anio<2100){ ANIO_BASE=mapCat.__anio; S.anio=ANIO_BASE; }
+      S.cat[sv]=leeBloque(R,i,mapCat,CERO_CAT);
+      continue;
+    }
+    if(!auxHecho && (enc.includes("LABORATORIO")||enc.includes("ECOGRAF")||enc.includes("AUXILIAR")||enc.includes("TOMOGRAF"))){
+      S.aux=leeBloque(R,i,mapAux); auxHecho=true;
+    }
   }
-  const mapCat={a:1,a25:2,b:3,b25:4,i:5,i25:6,c:7,c25:8,d:9,d25:10,sin:11,sin25:12,sp:13,sp25:14,ex:15,ex25:16};
-  idxCat.forEach(({i,t})=>{
-    const e=buscaEnero(R,i); if(e<0) return;
-    const blq=leeBloque(R,e,mapCat);
-    if(t.includes("CONSULTA")) S.cat.ce=blq;
-    else if(t.includes("EMERGENCIA")) S.cat.em=blq;
-    else if(t.includes("HOSPITALIZACION")) S.cat.hosp=blq;
-    else if(t.includes("AUXILIARES")) S.cat.dx=blq;
-  });
 
   /* --- CONSULTA EXTERNA POR ESPECIALIDAD --- */
   const shCE = hoja(wb,"CE X ESPECIALIDAD","CONSULTA EXTERNA");
@@ -820,11 +927,12 @@ function acumAux(){
 const auxTot = m => m.colpo+m.eco+m.ekg+m.lab+m.pat+m.rad+m.smt+m.tom;
 const auxTot25 = m => m.colpo25+m.eco25+m.ekg25+m.lab25+m.pat25+m.rad25+m.smt25+m.tom25;
 
-/* Categoría I incluye los pacientes sin categorizar, igual que la matriz */
-function catMes(m){ return {a:m.a,b:m.b,i:m.i+m.sin,c:m.c,d:m.d,sp:m.sp,ex:m.ex}; }
-function catMes25(m){ return {a:m.a25,b:m.b25,i:m.i25+m.sin25,c:m.c25,d:m.d25,sp:m.sp25,ex:m.ex25}; }
+/* Cada categoría se reporta tal como consta en la matriz; los pacientes sin
+   categorizar se muestran aparte y no se suman a la categoría I. */
+function catMes(m){ return {a:m.a,b:m.b,i:m.i,sin:m.sin,c:m.c,d:m.d,sp:m.sp,ex:m.ex}; }
+function catMes25(m){ return {a:m.a25,b:m.b25,i:m.i25,sin:m.sin25,c:m.c25,d:m.d25,sp:m.sp25,ex:m.ex25}; }
 function acumCat(serie){
-  const z={a:0,b:0,i:0,c:0,d:0,sp:0,ex:0}, y={a:0,b:0,i:0,c:0,d:0,sp:0,ex:0};
+  const z={a:0,b:0,i:0,sin:0,c:0,d:0,sp:0,ex:0}, y={a:0,b:0,i:0,sin:0,c:0,d:0,sp:0,ex:0};
   for(const k of MS()){
     const c=catMes(serie[k]), p=catMes25(serie[k]);
     for(const q in z){ z[q]+=c[q]; y[q]+=p[q]; }
@@ -834,7 +942,7 @@ function acumCat(serie){
   return {y26:z,y25:y};
 }
 function acumCatGlobal(){
-  const t={a:0,b:0,i:0,c:0,d:0,sp:0,ex:0,total:0}, p={a:0,b:0,i:0,c:0,d:0,sp:0,ex:0,total:0};
+  const t={a:0,b:0,i:0,sin:0,c:0,d:0,sp:0,ex:0,total:0}, p={a:0,b:0,i:0,sin:0,c:0,d:0,sp:0,ex:0,total:0};
   ["ce","em","hosp","dx"].forEach(k=>{
     const r=acumCat(S.cat[k]);
     for(const q in t){ t[q]+=r.y26[q]||0; p[q]+=r.y25[q]||0; }
@@ -1251,7 +1359,7 @@ function vCat(){
   filas.push({cls:"tot",c:["Todos los servicios",...Object.keys(CAT_LB).map(q=>N(G.y26[q])),N(G.y26.total),PC(div(G.y26.a+G.y26.b+G.y26.i,G.y26.total))]});
   out+=card("Atenciones por categoría y servicio","Acumulado "+etiquetaPeriodo(MS())+" "+S.anio,
     tabla([{t:"Servicio",l:1},...Object.keys(CAT_LB).map(q=>({t:CAT_LB[q]})),{t:"Total"},{t:"Misión social"}],filas)+
-    '<p class="mini" style="margin-top:10px">La categoría I incorpora a los pacientes registrados sin categorización, tal como se consolida en la matriz.</p>');
+    '<p class="mini" style="margin-top:10px">Cada categoría se muestra tal como consta en la matriz. Los pacientes sin categorizar se reportan aparte y no se suman a la categoría I. La misión social corresponde a las categorías A, B e I.</p>');
   out+=card("Composición global","Todos los servicios",
     '<div class="grid2"><div>'+chDonut(Object.keys(CAT_LB).map(q=>({label:CAT_LB[q],value:G.y26[q],color:CAT_CO[q]})),{centro:N(G.y26.total),centroSub:"atenciones"})+"</div><div>"+
     chHBar(serv.map(([lb,kk])=>{ const R=acumCat(S.cat[kk]); return {label:lb,v:R.y26.total,v2:R.y25.total}; }),{color:"#2e6da4",color2:"#f0b166",ml:160,rh:28})+
@@ -1488,12 +1596,14 @@ function vCarga(){
           <input type="file" id="file" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="cargaMsg" style="margin-top:14px"></div>
+        <div id="estadoNubeProd" style="margin-top:14px"></div>
         ${hay?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
           ${(()=>{const R=acum();return `${N(R.egr)} egresos · ${N(R.ce)} consultas externas · ${N(R.em)} emergencias · ${N(R.cir)} cirugías · ${N(R.partos)} partos`;})()}
           <br><b>Período:</b> ${etiquetaPeriodo(S.sel&&S.sel.length?S.sel:MS())} ${S.anio} · leída el ${new Date(S.cargadoEn).toLocaleString("es-EC")}.${S.publicadoPor?`<br>Publicada por ${esc(S.publicadoPor)}${S.publicadoEn?" el "+new Date(S.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_data');blank();S.cargadoEn=null;S.corte=0;S.sel=[];ir('carga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('carga')">Traer la última versión publicada</button>
+          <button class="btn ghost sm" onclick="publicarProduccion('Publicación manual de la matriz vigente.')">Publicar de nuevo en la base</button>
         </div>
       </div>
       <div>
@@ -1511,13 +1621,42 @@ function vCarga(){
       </div>
     </div>`);
 }
+function resumenProd(d){
+  try{
+    const ms=(d.sel&&d.sel.length?d.sel:(d.meses||[]).map((m,i)=>i));
+    let e=0,c=0,u=0,q=0;
+    ms.forEach(i=>{ const m=(d.meses||[])[i]; if(!m) return; e+=m.egr||0; c+=m.ce||0; u+=m.em||0; q+=m.cir||0; });
+    return `${N(e)} egresos · ${N(c)} consultas externas · ${N(u)} emergencias · ${N(q)} cirugías`;
+  }catch(x){ return "—"; }
+}
 function initCarga(){
+  pintarEstadoNube("matriz_produccion","estadoNubeProd",resumenProd);
   const d=$("#drop"), f=$("#file"); if(!d) return;
   d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
   d.ondragleave=()=>d.classList.remove("hot");
   d.ondrop=e=>{e.preventDefault();d.classList.remove("hot"); if(e.dataTransfer.files[0]) leerArchivo(e.dataTransfer.files[0]); f.value="";};
   f.onchange=e=>{ const a=e.target.files[0]; if(a) leerArchivo(a); e.target.value=""; };
+}
+/* Comprueba que todas las secciones esperadas se hayan reconocido en el archivo */
+function faltantesProd(){
+  const f=[];
+  if(!S.meses.some(m=>m.egr||m.ce||m.em||m.cir)) f.push("bloque principal de producción");
+  if(!S.aux.some(a=>auxTot(a))) f.push("auxiliares de diagnóstico");
+  [["ce","consulta externa"],["em","emergencia"],["hosp","hospitalización"],["dx","auxiliares de diagnóstico"]].forEach(([k,n])=>{
+    const t=(S.cat[k]||[]).reduce((a,m)=>a+m.a+m.b+m.i+m.sin+m.c+m.d+m.sp+m.ex,0);
+    if(!t) f.push("categoría de paciente · "+n);
+  });
+  if(!S.ceEsp.length)  f.push("consulta externa por especialidad");
+  if(!S.cirEsp.length) f.push("cirugías por especialidad");
+  if(!S.deptos.length) f.push("hospitalización por departamento");
+  return f;
+}
+function avisoFaltantes(lista){
+  if(!lista.length) return '<div class="note" style="border-color:#1f8a5b;background:#eef8f2;margin-top:10px"><b>Todas las secciones del archivo se reconocieron correctamente.</b></div>';
+  return '<div class="note warn" style="margin-top:10px"><b>Estas secciones no se reconocieron y quedaron en cero:</b><br>'+
+    lista.map(x=>"• "+esc(x)).join("<br>")+
+    '<br><span class="mini">Revise que esas hojas o bloques conserven sus encabezados de columna.</span></div>';
 }
 function fichaArchivo(file){
   const kb=(file.size/1024).toFixed(0);
@@ -1538,7 +1677,7 @@ function leerArchivo(file){
       const R=acum();
       const det=`Período detectado: ${etiquetaPeriodo(S.sel)} ${S.anio} · ${S.ceEsp.length} especialidades de consulta externa · ${S.cirEsp.length} especialidades quirúrgicas · ${S.deptos.length} departamentos.`+
         `<br><span class="mini">Verifique los totales leídos: ${N(R.egr)} egresos · ${N(R.ce)} consultas externas · ${N(R.em)} emergencias · ${N(R.cir)} cirugías.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`+avisoFaltantes(faltantesProd());
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarProduccion(det);
     }catch(err){
@@ -1556,8 +1695,12 @@ async function publicarProduccion(det){
        meses:S.meses,aux:S.aux,cat:S.cat,ceEsp:S.ceEsp,cirEsp:S.cirEsp,deptos:S.deptos});
     S.publicadoPor=(S.user&&S.user.nombre)||"—"; S.publicadoEn=new Date().toISOString();
     msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz cargada y publicada.</b><br>${det}<br>Disponible para todos los usuarios del sistema.</div>`+ver;
+    pintarEstadoNube("matriz_produccion","estadoNubeProd",resumenProd);
   }catch(e){
-    msg.innerHTML=`<div class="note warn"><b>Matriz cargada en este dispositivo, pero no se pudo publicar.</b><br>${esc(e.message)}<br>Verifique su conexión o si su usuario tiene permiso de carga.</div>`+ver;
+    msg.innerHTML=`<div class="note bad"><b>ATENCIÓN: la matriz NO se publicó en la base institucional.</b><br>${esc(e.message)}<br>
+      Los datos quedaron solo en este dispositivo y al recargar volverá a aparecer la versión anterior.
+      Verifique su conexión y que su usuario tenga permiso de carga.</div>`+ver;
+    pintarEstadoNube("matriz_produccion","estadoNubeProd",resumenProd);
   }
 }
 
@@ -1682,11 +1825,11 @@ async function preg(q){
    ======================================================================= */
 const AREAS = [
   {k:"ce",   n:"Consulta externa",          m:["CONSULTA EXTERNA"]},
-  {k:"aux",  n:"Auxiliares de diagnóstico", m:["AUXILIARES DE DIAGNOSTICO"]},
+  {k:"aux",  n:"Auxiliares de diagnóstico", m:["AUXILIARES DE DIAGNOSTICO","AUXILIARES DX","AUXILIARES DIAGNOSTICO","AUXILIARES"]},
   {k:"hosp", n:"Hospitalización",           m:["HOSPITALIZACION"]},
   {k:"neo",  n:"Neonatología",              m:["NEONATOLOGIA","NEONATOLOGÌA"]},
-  {k:"em",   n:"Emergencia",                m:["EMERGENCIA"]},
-  {k:"bot",  n:"Botiquín",                  m:["BOTIQUIN"]}
+  {k:"em",   n:"Emergencia",                m:["EMERGENCIA","EMERGENCIAS"]},
+  {k:"bot",  n:"Botiquín",                  m:["BOTIQUIN","FARMACIA","BOTIQUIN Y FARMACIA"]}
 ];
 const AREA_CO={ce:"#2e6da4",aux:"#25a0a0",hosp:"#e8862b",neo:"#6c5ca8",em:"#cf5049",bot:"#8dc63f"};
 
@@ -1711,8 +1854,14 @@ function mesIdx(txt){
 
 function parseFinanciero(wb){
   finVacio();
-  const sh = hoja(wb,"ResultadoxArea","Resultado x Area","ResultadoArea");
-  if(!sh) throw new Error("El archivo no contiene la hoja «ResultadoxArea».");
+  let sh = hoja(wb,"ResultadoxArea","Resultado x Area","ResultadoArea","Resultado Area");
+  if(!sh){   /* respaldo: se busca la hoja que contenga bloques «COMPARATIVO A …» y «CUENTAS» */
+    for(const nm of wb.SheetNames){
+      const t=JSON.stringify(filas(wb.Sheets[nm]).slice(0,12));
+      if(norm(t).includes("COMPARATIVO A") && norm(t).includes("CUENTAS")){ sh=wb.Sheets[nm]; break; }
+    }
+  }
+  if(!sh) throw new Error("No se encontró la hoja de resultados por área (ResultadoxArea).");
   const R = filas(sh);
 
   /* localizar bloques: fila con «COMPARATIVO A <MES>» y fila de encabezados con CUENTAS / 2026 / 2025 */
@@ -1728,14 +1877,20 @@ function parseFinanciero(wb){
         for(let k=ri+1;k<Math.min(ri+6,R.length);k++){
           const h=R[k]||[];
           for(let c=Math.max(0,ci-2);c<Math.min(h.length,ci+16);c++){
-            if(norm(h[c])==="CUENTAS"){
-              let c26=-1,c25=-1;
-              for(let q=c+1;q<Math.min(h.length,c+14);q++){
-                const hv=norm(h[q]);
-                if(hv==="2026"&&c26<0) c26=q;
-                if(hv==="2025"&&c25<0) c25=q;
+            if(norm(h[c]).startsWith("CUENTAS")){
+              /* se toman los dos años que aparezcan: el mayor es el corriente */
+              const enc=[];
+              for(let q=c+1;q<Math.min(h.length,c+16);q++){
+                const m=String(h[q]==null?"":h[q]).match(/(19|20)\d{2}/);
+                if(m && String(h[q]).trim().length<=8) enc.push({an:+m[0],q});
               }
-              if(c26>=0&&c25>=0) bloques.push({mes:mi,lab:c,c26,c25,fila:k});
+              if(enc.length>=2){
+                const anios=[...new Set(enc.map(x=>x.an))].sort((a,b)=>b-a);
+                const cur=anios[0], pre=anios[1]!=null?anios[1]:null;
+                const c26=(enc.find(x=>x.an===cur)||{}).q;
+                const c25=(enc.find(x=>x.an===pre)||{}).q;
+                if(c26!=null&&c25!=null){ bloques.push({mes:mi,lab:c,c26,c25,fila:k,anio:cur}); }
+              }
               return;
             }
           }
@@ -1758,29 +1913,31 @@ function parseFinanciero(wb){
       const ak=finArea(lab);
       if(ak && !tot){ area=ak; d.y26.areas[ak].at=v26; d.y25.areas[ak].at=v25; continue; }
       if(!tot && area){
-        if(t==="INGRESOS"){ d.y26.areas[area].ing=v26; d.y25.areas[area].ing=v25; continue; }
-        if(t.startsWith("COSTOS DIRECTOS")){ d.y26.areas[area].cos=v26; d.y25.areas[area].cos=v25; continue; }
-        if(t.startsWith("SUBSIDIO")||t.startsWith("% DE RECUPERACION")) continue;
+        if(t.startsWith("INGRESO")){ d.y26.areas[area].ing=v26; d.y25.areas[area].ing=v25; continue; }
+        if(t.includes("COSTO")&&t.includes("DIRECT")){ d.y26.areas[area].cos=v26; d.y25.areas[area].cos=v25; continue; }
+        if(t.startsWith("SUBSIDIO")||t.includes("RECUPERACION")) continue;
       }
-      if(t==="INGRESOS"&&tot){ d.y26.ing=v26; d.y25.ing=v25; continue; }
-      if(t.startsWith("OTROS INGRESOS")&&tot){ d.y26.otros=v26; d.y25.otros=v25; continue; }
-      if(t.startsWith("RECUPERACION")&&tot){ d.y26.recup=v26; d.y25.recup=v25; continue; }
-      if(t==="COSTOS"&&tot){ d.y26.cos=v26; d.y25.cos=v25; continue; }
-      if(t==="DIRECTOS"&&tot){ d.y26.dir=v26; d.y25.dir=v25; continue; }
-      if(t==="INDIRECTOS"&&tot){ d.y26.ind=v26; d.y25.ind=v25; continue; }
-      if(t.includes("VARIACION PATRIM")&&tot){ d.y26.var=v26; d.y25.var=v25; continue; }
+      if(tot){
+        if(t.includes("VARIACION PATRIM")||t.includes("RESULTADO DEL EJERCICIO")){ d.y26.var=v26; d.y25.var=v25; continue; }
+        if(t.startsWith("OTROS INGRESO")){ d.y26.otros=v26; d.y25.otros=v25; continue; }
+        if(t.startsWith("RECUPERACION")||t.startsWith("PRODUCCION")){ if(!d.y26.recup){ d.y26.recup=v26; d.y25.recup=v25; } continue; }
+        if(t.startsWith("INGRESO")){ d.y26.ing=v26; d.y25.ing=v25; continue; }
+        if(t.startsWith("COSTO")&&!t.includes("DIRECT")&&!t.includes("INDIRECT")){ d.y26.cos=v26; d.y25.cos=v25; continue; }
+        if(t.startsWith("DIRECTO")){ d.y26.dir=v26; d.y25.dir=v25; continue; }
+        if(t.startsWith("INDIRECTO")){ d.y26.ind=v26; d.y25.ind=v25; continue; }
+      }
     }
     /* si el bloque de totales no trajo ingresos, usar los encabezados superiores del bloque */
     if(!d.y26.ing){
       for(let i=b.fila+1;i<Math.min(R.length,b.fila+14);i++){
         const r=R[i]||[], t=norm(r[b.lab]);
-        if(t==="INGRESOS"){ d.y26.ing=num(r[b.c26]); d.y25.ing=num(r[b.c25]); break; }
+        if(t.startsWith("INGRESO")){ d.y26.ing=num(r[b.c26]); d.y25.ing=num(r[b.c25]); break; }
       }
     }
     if(!d.y26.recup){
       for(let i=b.fila+1;i<Math.min(R.length,b.fila+14);i++){
         const r=R[i]||[], t=norm(r[b.lab]);
-        if(t.startsWith("RECUPERACION")){ d.y26.recup=num(r[b.c26]); d.y25.recup=num(r[b.c25]); break; }
+        if(t.startsWith("RECUPERACION")||t.startsWith("PRODUCCION")){ d.y26.recup=num(r[b.c26]); d.y25.recup=num(r[b.c25]); break; }
       }
     }
     if(d.y26.ing||d.y26.cos) cum[b.mes]=d;
@@ -1808,13 +1965,18 @@ function parseFinanciero(wb){
   const shD=hoja(wb,"Deuda RPIS","Deuda");
   F.deudaM={};
   if(shD){
-    const r=filas(shD); let mi=-1, corte="", items=[];
+    const r=filas(shD); let mi=-1, corte="", items=[], colTotal=-1;
     const cerrar=()=>{ if(mi>=0&&items.length) F.deudaM[mi]={corte,items,total:items.reduce((a,x)=>a+x.v,0)}; };
     for(let i=0;i<r.length;i++){
       const raw=r[i]&&r[i][0], t=norm(raw);
       if(t.includes("PENDIENTE DE FACTURAR")){
-        cerrar(); items=[];
+        cerrar(); items=[]; colTotal=-1;
         corte=String(raw).replace(/\s+/g," ").trim();
+        for(let k=i+1;k<Math.min(r.length,i+5);k++){          /* columna «TOTAL» del bloque */
+          const h=r[k]||[];
+          for(let c=1;c<h.length;c++) if(norm(h[c]).startsWith("TOTAL")){ colTotal=c; break; }
+          if(colTotal>=0) break;
+        }
         const comp=t.replace(/\s/g,"");
         mi=-1;
         const al=["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
@@ -1824,7 +1986,7 @@ function parseFinanciero(wb){
       if(mi<0) continue;
       const ent=norm(raw);
       if(["IESS","MSP","ISSPOL","ISSFA","MUNICIPIO","OTROS"].includes(ent)){
-        const v=num(r[i][6])||num(r[i][3])||num(r[i][1]);
+        const v=(colTotal>=0?num(r[i][colTotal]):0)||num(r[i][6])||num(r[i][3])||num(r[i][1]);
         items.push({ent:String(raw).replace(/\s+/g," ").trim(),v});
       }
     }
@@ -1833,6 +1995,8 @@ function parseFinanciero(wb){
   const dm=Object.keys(F.deudaM).map(Number).sort((a,b)=>a-b);
   F.deuda = dm.length ? F.deudaM[dm[dm.length-1]] : null;
 
+  const anios=bloques.map(b=>b.anio).filter(a=>a>2000&&a<2100);
+  if(anios.length) F.anio=Math.max(...anios);
   F.sel=F.m.map((m,i)=>m.dato?i:-1).filter(i=>i>=0);
   if(!F.sel.length) throw new Error("No se encontraron meses con información financiera.");
   F.cargadoEn=new Date().toISOString();
@@ -1917,8 +2081,14 @@ const dias = (a,b)=> (a&&b)?Math.round((a-b)/86400000):null;
 
 function parseInversiones(wb){
   invVacio();
-  const sh = hoja(wb,"BANCOS","INVERSIONES","POLIZAS");
-  if(!sh) throw new Error("El archivo no contiene la hoja «BANCOS».");
+  let sh = hoja(wb,"BANCOS","INVERSIONES","POLIZAS","PORTAFOLIO","COLOCACIONES");
+  if(!sh){   /* respaldo: la hoja que contenga encabezados de fecha y valor */
+    for(const nm of wb.SheetNames){
+      const t=norm(JSON.stringify(filas(wb.Sheets[nm]).slice(0,40)));
+      if(t.includes("FECHA") && (t.includes("VALOR")||t.includes("CAPITAL")) && (t.includes("TASA")||t.includes("INTERES"))){ sh=wb.Sheets[nm]; break; }
+    }
+  }
+  if(!sh) throw new Error("No se encontró la hoja de inversiones (BANCOS).");
   const R = filas(sh);
   const esFechaHdr = v => norm(v).startsWith("FECHA");
 
@@ -1929,21 +2099,39 @@ function parseInversiones(wb){
     const h=R[i+1]; if(!h||!esFechaHdr(h[0])) continue;
 
     const titulo=bonito(t);
-    const poliza=norm(h[2]).includes("VENCIMIENTO");
+    /* se ubica cada dato por el texto de su encabezado */
+    const col={};
+    h.forEach((v,c)=>{
+      const q=norm(v).replace(/\s+/g," ");
+      if(!q) return;
+      if(col.vence==null && q.includes("VENCIMIENTO")) col.vence=c;
+      else if(col.fecha==null && q.startsWith("FECHA")) col.fecha=c;
+      if(col.valor==null && (q.startsWith("VALOR")||q.startsWith("CAPITAL")||q.startsWith("MONTO")||q.startsWith("INVERSION"))) col.valor=c;
+      if(col.tasa==null && q.includes("TASA")) col.tasa=c;
+      if(col.interes==null && q.startsWith("INTERES")) col.interes=c;
+      if(col.total==null && q.startsWith("TOTAL")) col.total=c;
+    });
+    const poliza = col.vence!=null || norm(h[2]).includes("VENCIMIENTO");
     const bruto=norm(t).replace("POLIZAS BANCO ","").replace("POLIZAS ","").replace("FIDUCIA ","").trim();
     const entidad=bonito(bruto);
     const items=[];
     for(let k=i+2;k<R.length;k++){
-      const r=R[k]||[], f=fechaDe(r[0]);
+      const r=R[k]||[], f=fechaDe(r[col.fecha!=null?col.fecha:0]);
       if(!f){ if(r[0]&&typeof r[0]==="string") break; if(!r[1]) break; continue; }
-      const valor=num(r[1]); if(!valor) continue;
-      if(poliza) items.push({fecha:f,valor,vence:fechaDe(r[2]),interes:num(r[3]),tasa:num(r[4]),total:valor+num(r[3])});
-      else       items.push({fecha:f,valor,vence:null,interes:num(r[2]),tasa:num(r[4]),total:num(r[3])||valor+num(r[2])});
+      const cv = col.valor!=null?col.valor:1;
+      const valor=num(r[cv]); if(!valor) continue;
+      const ven = col.vence!=null?fechaDe(r[col.vence]):(poliza?fechaDe(r[2]):null);
+      const inte= col.interes!=null?num(r[col.interes]):(poliza?num(r[3]):num(r[2]));
+      const tas = col.tasa!=null?num(r[col.tasa]):num(r[4]);
+      const tot = col.total!=null?num(r[col.total]):(poliza?0:num(r[3]));
+      items.push({fecha:f,valor,vence:ven,interes:inte,tasa:tas,total:tot||valor+inte});
       i=k;
     }
     if(items.length) I.bloques.push({titulo,entidad,tipo:poliza?"poliza":"fiducia",items});
   }
   if(!I.bloques.length) throw new Error("No se reconocieron bloques de inversiones en la hoja «BANCOS».");
+  /* si las tasas vienen como 5,25 en lugar de 0,0525 se convierten a proporción */
+  I.bloques.forEach(b=>b.items.forEach(x=>{ if(x.tasa>1) x.tasa=x.tasa/100; }));
 
   let ult=null;
   I.bloques.forEach(b=>b.items.forEach(x=>{ if(x.fecha&&(!ult||x.fecha>ult)) ult=x.fecha; }));
@@ -2227,12 +2415,14 @@ function iCarga(){
           <input type="file" id="ifile" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="icargaMsg" style="margin-top:14px"></div>
+        <div id="estadoNubeInv" style="margin-top:14px"></div>
         ${I.cargadoEn?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
           ${(()=>{const R=invAcum();return `capital ${M(R.capital)} · intereses ${M(R.interes)} · ${R.n} instrumentos`;})()}
           <br><b>Corte:</b> ${invCorte()} · leída el ${new Date(I.cargadoEn).toLocaleString("es-EC")}.${I.publicadoPor?`<br>Publicada por ${esc(I.publicadoPor)}${I.publicadoEn?" el "+new Date(I.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_inv');invVacio();ir('icarga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('icarga')">Traer la última versión publicada</button>
+          <button class="btn ghost sm" onclick="publicarInversiones('Publicación manual de la matriz vigente.')">Publicar de nuevo en la base</button>
         </div>
       </div>
       <div>
@@ -2250,7 +2440,15 @@ function iCarga(){
       </div>
     </div>`);
 }
+function resumenInv(d){
+  try{
+    let cap=0,int=0,n=0;
+    (d.bloques||[]).forEach(b=>(b.items||[]).forEach(x=>{ cap+=x.valor||0; int+=x.interes||0; n++; }));
+    return `capital ${M(cap)} · intereses ${M(int)} · ${n} instrumentos`;
+  }catch(x){ return "—"; }
+}
 function initICarga(){
+  pintarEstadoNube("matriz_inversiones","estadoNubeInv",resumenInv);
   const d=$("#idrop"), f=$("#ifile"); if(!d) return;
   d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
@@ -2272,7 +2470,13 @@ function leerInversiones(file){
       const A=invAcum();
       const det=`Corte al ${invCorte()} · ${A.n} instrumentos · ${I.bloques.length} bloques.`+
         `<br><span class="mini">Verifique los totales leídos: capital ${M(A.capital)} · intereses ${M(A.interes)} · tasa ponderada ${PC(A.tasaPond,2)}.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
+      const falta=[];
+      if(!I.bloques.some(b=>b.tipo==="poliza")) falta.push("pólizas bancarias");
+      if(!I.bloques.some(b=>b.tipo==="fiducia")) falta.push("fondos fiduciarios");
+      if(!A.tasaPond) falta.push("tasas de interés");
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz de inversiones leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`+
+        avisoFaltantes(falta)+
+        '<div class="note" style="margin-top:10px"><b>Bloques reconocidos:</b><br>'+I.bloques.map(b=>"• "+esc(b.titulo)+" ("+b.items.length+")").join("<br>")+"</div>";
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarInversiones(det);
     }catch(err){ msg.innerHTML='<div class="note bad"><b>No se pudo leer el archivo.</b><br>'+esc(err.message)+"</div>"; }
@@ -2286,8 +2490,11 @@ async function publicarInversiones(det){
     await nubePublicar("matriz_inversiones",I.anio,invCorte(),{anio:I.anio,corte:I.corte,cargadoEn:I.cargadoEn,bloques:I.bloques});
     I.publicadoPor=(S.user&&S.user.nombre)||"—"; I.publicadoEn=new Date().toISOString();
     msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz cargada y publicada.</b><br>${det}<br>Disponible para todos los usuarios del sistema.</div>`+ver;
+    pintarEstadoNube("matriz_inversiones","estadoNubeInv",resumenInv);
   }catch(e){
-    msg.innerHTML=`<div class="note warn"><b>Matriz cargada en este dispositivo, pero no se pudo publicar.</b><br>${esc(e.message)}</div>`+ver;
+    msg.innerHTML=`<div class="note bad"><b>ATENCIÓN: la matriz NO se publicó en la base institucional.</b><br>${esc(e.message)}<br>
+      Los datos quedaron solo en este dispositivo y al recargar volverá a aparecer la versión anterior.</div>`+ver;
+    pintarEstadoNube("matriz_inversiones","estadoNubeInv",resumenInv);
   }
 }
 
@@ -2683,12 +2890,14 @@ function fCarga(){
           <input type="file" id="ffile" accept=".xlsx,.xlsm,.xls" style="display:none">
         </div>
         <div id="fcargaMsg" style="margin-top:14px"></div>
+        <div id="estadoNubeFin" style="margin-top:14px"></div>
         ${F.cargadoEn?`<div class="note" style="margin-top:14px"><b>Datos vigentes en el sistema</b><br>
           ${(()=>{const R=finAcum();return `ingresos ${M(R.y26.ing)} · costos ${M(R.y26.cos)} · resultado ${M(R.y26.resultado)}`;})()}
           <br><b>Período:</b> ${etiquetaPeriodo(F.m.map((m,i)=>m.dato?i:-1).filter(i=>i>=0))} ${F.anio} · leída el ${new Date(F.cargadoEn).toLocaleString("es-EC")}.${F.publicadoPor?`<br>Publicada por ${esc(F.publicadoPor)}${F.publicadoEn?" el "+new Date(F.publicadoEn).toLocaleString("es-EC"):""}.`:""}</div>`:""}
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="if(confirm('Se limpiará la copia local de este dispositivo. La versión publicada en la base no se elimina. ¿Continuar?')){store.del('hh_fin');finVacio();F.cargadoEn=null;F.sel=[];ir('fcarga');}">Limpiar la copia local</button>
           <button class="btn ghost sm" onclick="recargarNube('fcarga')">Traer la última versión publicada</button>
+          <button class="btn ghost sm" onclick="publicarFinanciero('Publicación manual de la matriz vigente.')">Publicar de nuevo en la base</button>
         </div>
       </div>
       <div>
@@ -2704,7 +2913,27 @@ function fCarga(){
       </div>
     </div>`);
 }
+function faltantesFin(){
+  const f=[], A=finAcum();
+  if(!A.y26.ing) f.push("ingresos del período");
+  if(!A.y26.cos) f.push("costos del período");
+  if(!A.y26.recup) f.push("producción facturada");
+  if(!A.y26.dir) f.push("costos directos");
+  if(!A.y26.ind) f.push("costos indirectos");
+  AREAS.forEach(a=>{ const x=A.y26.areas[a.k]; if(!x.ing&&!x.cos) f.push("área: "+a.n); });
+  if(!F.deuda) f.push("cartera con la red pública (hoja Deuda RPIS)");
+  return f;
+}
+function resumenFin(d){
+  try{
+    const ms=(d.sel&&d.sel.length?d.sel:(d.m||[]).map((x,i)=>i));
+    let i26=0,c26=0;
+    ms.forEach(i=>{ const x=(d.m||[])[i]; if(!x||!x.dato) return; i26+=x.y26.ing||0; c26+=x.y26.cos||0; });
+    return `ingresos ${M(i26)} · costos ${M(c26)} · resultado ${M(i26-c26)}`;
+  }catch(x){ return "—"; }
+}
 function initFCarga(){
+  pintarEstadoNube("matriz_financiera","estadoNubeFin",resumenFin);
   const d=$("#fdrop"), f=$("#ffile"); if(!d) return;
   d.onclick=()=>{ f.value=""; f.click(); };   /* se limpia para poder recargar el mismo archivo */
   d.ondragover=e=>{e.preventDefault();d.classList.add("hot");};
@@ -2726,7 +2955,7 @@ function leerFinanciero(file){
       const R=finAcum();
       const det=`Meses detectados: ${etiquetaPeriodo(F.sel)} ${F.anio}${F.deuda?" · cartera de la red pública incluida":""}.`+
         `<br><span class="mini">Verifique los totales leídos: ingresos ${M(R.y26.ing)} · costos ${M(R.y26.cos)} · resultado ${M(R.y26.resultado)}.</span>`;
-      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`;
+      msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera leída.</b><br>${det}<br>${fichaArchivo(file)}</div>`+avisoFaltantes(faltantesFin());
       pintarSidebar(); pintarMeses(); pintarAlerta();
       publicarFinanciero(det);
     }catch(err){ msg.innerHTML='<div class="note bad"><b>No se pudo leer el archivo.</b><br>'+esc(err.message)+"</div>"; }
@@ -2741,8 +2970,11 @@ async function publicarFinanciero(det){
       {anio:F.anio,sel:F.sel,cargadoEn:F.cargadoEn,m:F.m,deuda:F.deuda,deudaM:F.deudaM});
     F.publicadoPor=(S.user&&S.user.nombre)||"—"; F.publicadoEn=new Date().toISOString();
     msg.innerHTML=`<div class="note" style="border-color:#1f8a5b;background:#eef8f2"><b>Matriz financiera cargada y publicada.</b><br>${det}<br>Disponible para todos los usuarios del sistema.</div>`+ver;
+    pintarEstadoNube("matriz_financiera","estadoNubeFin",resumenFin);
   }catch(e){
-    msg.innerHTML=`<div class="note warn"><b>Matriz leída en este dispositivo, pero no se pudo publicar.</b><br>${esc(e.message)}<br>Verifique su conexión o si su usuario tiene permiso de carga.</div>`+ver;
+    msg.innerHTML=`<div class="note bad"><b>ATENCIÓN: la matriz NO se publicó en la base institucional.</b><br>${esc(e.message)}<br>
+      Los datos quedaron solo en este dispositivo y al recargar volverá a aparecer la versión anterior.</div>`+ver;
+    pintarEstadoNube("matriz_financiera","estadoNubeFin",resumenFin);
   }
 }
 
