@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#16324f">
+<meta name="description" content="Sistema de gestión hospitalaria de la Fundación Pablo Jaramillo Crespo">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icono-ios.png">
+<link rel="icon" type="image/png" href="icono-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gestión HH">
+<meta name="format-detection" content="telephone=no">
 <title>Gestión Hospitalaria · Hospital Humanitario</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -21,7 +31,8 @@ body{
   font-family:"Segoe UI",Roboto,-apple-system,"Helvetica Neue",Arial,sans-serif;
   background:var(--bg); color:var(--ink); font-size:14px; line-height:1.45;
 }
-button{font-family:inherit}
+button{font-family:inherit;touch-action:manipulation}
+input,select,textarea{touch-action:manipulation}
 h1,h2,h3,h4{margin:0;font-weight:700;letter-spacing:-.01em}
 a{color:var(--blue)}
 
@@ -299,6 +310,22 @@ table.t .grp th:first-child{background:#eef2f7}
 /* =====================  TELÉFONOS Y TABLETAS  ===================== */
 @media(max-width:860px){
   .burger{display:inline-flex}
+  /* los campos deben medir al menos 16 px: por debajo, iOS acerca la pantalla al escribir */
+  .field input,.chatin input,#login input[type="text"],#login input[type="password"]{font-size:16px}
+  .topbar select,.chatin input{font-size:16px}
+  /* respeto de las zonas seguras: muesca superior y barra inferior */
+  .side{padding-top:env(safe-area-inset-top)}
+  .topbar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .mesbar,.alertbar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .wrap{
+    padding-left:max(12px,env(safe-area-inset-left));
+    padding-right:max(12px,env(safe-area-inset-right));
+    padding-bottom:calc(40px + env(safe-area-inset-bottom))
+  }
+  .avisoses{bottom:calc(18px + env(safe-area-inset-bottom))}
+  #login{padding:max(24px,env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom))}
+  .btn{min-height:42px}
+  .side nav a{min-height:44px}
   .layout{flex-direction:row}
   .side{
     position:fixed;left:0;top:0;bottom:0;width:264px;flex:none;height:100vh;height:100dvh;
@@ -448,7 +475,7 @@ table.t .grp th:first-child{background:#eef2f7}
       <div class="rw"><span>Última carga</span><b id="nb3">—</b></div>
       <button class="btn ghost sm" style="width:100%;margin-top:10px" id="btnOut">Cerrar sesión</button>
       <div style="text-align:center;font-size:10px;color:#7794b3;margin-top:8px;line-height:1.5">
-        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-12
+        Desarrollado por Ricardo Ganzino<br>versión 2026.09.10-13
       </div>
     </div>
   </aside>
@@ -3378,8 +3405,26 @@ window.addEventListener("unhandledrejection", ev=>{
   if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(m)) ev.preventDefault();
 });
 
+/* Instalación en la pantalla de inicio del teléfono */
+function registrarServicio(){
+  if(!("serviceWorker" in navigator) || !location.protocol.startsWith("http")) return;
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+let instalador=null;
+window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); instalador=e; mostrarInstalar(); });
+function mostrarInstalar(){
+  if(document.getElementById("btnInstalar")) return;
+  const b=document.createElement("button");
+  b.id="btnInstalar"; b.className="btn orange sm noprint";
+  b.style.cssText="position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:70;box-shadow:0 8px 24px rgba(6,20,35,.3)";
+  b.textContent="Instalar la aplicación";
+  b.onclick=async ()=>{ if(!instalador) return; b.remove(); instalador.prompt(); try{ await instalador.userChoice; }catch(e){} instalador=null; };
+  document.body.appendChild(b);
+}
+
 document.addEventListener("DOMContentLoaded", async ()=>{
   blank(); finVacio(); invVacio();
+  registrarServicio();
   sbInit();
   const form=$("#lform");
   if(form) form.onsubmit=e=>{ e.preventDefault(); entrar(); };

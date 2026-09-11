@@ -26,6 +26,8 @@
     Content-Security-Policy = """
       default-src 'self';
       script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      worker-src 'self';
+      manifest-src 'self';
       style-src 'self' 'unsafe-inline';
       img-src 'self' data: blob:;
       font-src 'self' data:;
@@ -39,3 +41,13 @@
   for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
