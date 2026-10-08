@@ -12,6 +12,13 @@
   node_bundler = "esbuild"
 
 # ---------------------------------------------------------------------
+# Latido diario: mantiene activo el proyecto de Supabase.
+# 12:00 UTC = 07:00 en Ecuador, todos los días.
+# ---------------------------------------------------------------------
+[functions."latido"]
+  schedule = "0 12 * * *"
+
+# ---------------------------------------------------------------------
 # Cabeceras de seguridad
 # La política de contenido permite: los CDN de SheetJS y Supabase,
 # la conexión al proyecto Supabase y la API de Anthropic.
